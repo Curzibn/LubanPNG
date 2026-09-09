@@ -9,7 +9,7 @@ repository = "https://github.com/Curzibn/LubanPNG"
 [dependencies]
 axum = { version = "0.8", features = ["multipart"] }
 tokio = { version = "1", features = ["full"] }
-tower-http = { version = "0.6", features = ["cors", "limit"] }
+tower-http = { version = "0.7", features = ["cors", "limit"] }
 utoipa = { version = "5", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 serde = { version = "1", features = ["derive"] }
@@ -19,10 +19,10 @@ anyhow = "1"
 uuid = { version = "1", features = ["v4"] }
 image = "0.25"
 imagequant = "4"
-oxipng = "9"
+oxipng = "10"
 mozjpeg = "0.10"
-img-parts = "0.3"
-image-compare = "0.4"
+img-parts = "0.4"
+image-compare = "0.5"
 async-trait = "0.1"
 
 [dev-dependencies]
