@@ -1,12 +1,4 @@
-mod config;
-mod domain;
-mod error;
-mod handlers;
-mod infrastructure;
-mod middleware;
-mod repositories;
-mod response;
-mod services;
+use lubanpng::{config, handlers, infrastructure, middleware, repositories, response, services};
 
 use axum::{
     extract::DefaultBodyLimit,
@@ -59,8 +51,8 @@ async fn main() {
     AppConfig::init().expect("初始化配置失败");
 
     let config = AppConfig::get();
-    let upload_dir = "uploads".to_string();
-    let output_dir = "outputs".to_string();
+    let upload_dir = config.storage.upload_dir.clone();
+    let output_dir = config.storage.output_dir.clone();
 
     let task_store = create_task_store();
     let task_repo: Arc<dyn TaskRepository> = Arc::new(TaskRepositoryImpl::new(task_store));

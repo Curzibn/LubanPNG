@@ -1,13 +1,11 @@
 use crate::error::{AppError, AppResult};
 use async_trait::async_trait;
-use std::path::Path;
 use tokio::fs;
 
 #[async_trait]
 pub trait FileStorage: Send + Sync {
     async fn save_upload(&self, task_id: &str, data: &[u8], extension: &str) -> AppResult<String>;
     async fn save_output(&self, task_id: &str, data: &[u8], extension: &str) -> AppResult<String>;
-    async fn read_file(&self, path: &str) -> AppResult<Vec<u8>>;
     async fn ensure_directories(&self) -> AppResult<()>;
 }
 
@@ -47,11 +45,6 @@ impl FileStorage for FileStorageImpl {
             .map_err(|e| AppError::internal(format!("保存文件失败: {}", e)))?;
         
         Ok(path)
-    }
-
-    async fn read_file(&self, path: &str) -> AppResult<Vec<u8>> {
-        fs::read(path).await
-            .map_err(|_| AppError::not_found(format!("文件不存在: {}", path)))
     }
 
     async fn ensure_directories(&self) -> AppResult<()> {

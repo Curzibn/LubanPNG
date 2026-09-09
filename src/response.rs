@@ -21,15 +21,10 @@ impl<T> ApiResponse<T> {
 }
 
 pub mod codes {
-    pub const SUCCESS: i32 = 0;
     pub const PARAM_ERROR: i32 = 1001;
     pub const FILE_TOO_LARGE: i32 = 1004;
-    pub const AUTH_FAILED: i32 = 1002;
-    pub const PERMISSION_DENIED: i32 = 1003;
     pub const SERVER_ERROR: i32 = 2001;
     pub const THIRD_PARTY_ERROR: i32 = 2002;
-    pub const USER_NOT_FOUND: i32 = 3001;
-    pub const DATA_EXISTS: i32 = 3002;
     pub const TASK_NOT_FOUND: i32 = 3003;
 }
 

@@ -9,6 +9,8 @@ pub struct AppConfig {
     pub jpeg_smart: JpegSmartConfig,
     #[serde(default)]
     pub png_smart: PngSmartConfig,
+    #[serde(default)]
+    pub storage: StorageConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,9 +50,36 @@ pub struct JpegSmartConfig {
 
 static CONFIG: OnceLock<AppConfig> = OnceLock::new();
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageConfig {
+    #[serde(default = "default_upload_dir")]
+    pub upload_dir: String,
+    #[serde(default = "default_output_dir")]
+    pub output_dir: String,
+}
+
+fn default_upload_dir() -> String {
+    "uploads".to_string()
+}
+
+fn default_output_dir() -> String {
+    "outputs".to_string()
+}
+
+impl Default for StorageConfig {
+    fn default() -> Self {
+        Self {
+            upload_dir: default_upload_dir(),
+            output_dir: default_output_dir(),
+        }
+    }
+}
+
 impl AppConfig {
     pub fn load() -> Result<Self, config::ConfigError> {
+        let defaults = config::Config::try_from(&Self::default())?;
         let config = config::Config::builder()
+            .add_source(defaults)
             .add_source(config::File::with_name("config").required(false))
             .add_source(config::Environment::with_prefix("APP").separator("_"))
             .build()?;
@@ -94,6 +123,7 @@ impl Default for AppConfig {
             },
             jpeg_smart: JpegSmartConfig::default(),
             png_smart: PngSmartConfig::default(),
+            storage: StorageConfig::default(),
         }
     }
 }

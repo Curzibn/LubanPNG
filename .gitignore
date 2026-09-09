@@ -1,0 +1,8 @@
+/target
+uploads/
+outputs/
+config.toml
+config.yaml
+config.json
+.env
+.DS_Store

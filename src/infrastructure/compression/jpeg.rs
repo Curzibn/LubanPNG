@@ -12,10 +12,6 @@ pub struct JpegCompressionStrategy;
 
 #[async_trait]
 impl CompressionStrategy for JpegCompressionStrategy {
-    fn format(&self) -> ImageFormat {
-        ImageFormat::Jpeg
-    }
-
     async fn compress(
         &self,
         input: &[u8],
@@ -93,5 +89,54 @@ fn compress_jpeg_with_quality(
         Ok(Ok(data)) => Ok(data),
         Ok(Err(e)) => Err(crate::error::AppError::compression(format!("JPEG编码失败: {}", e))),
         Err(_) => Err(crate::error::AppError::compression("JPEG编码过程中发生panic")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{DynamicImage, RgbImage};
+
+    fn photo_like_image(w: u32, h: u32) -> DynamicImage {
+        let mut img = RgbImage::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                img.put_pixel(
+                    x,
+                    y,
+                    image::Rgb([
+                        ((x * x / 7 + y * 3) % 256) as u8,
+                        ((x + y * y / 5) % 256) as u8,
+                        ((x * y / 3) % 256) as u8,
+                    ]),
+                );
+            }
+        }
+        DynamicImage::ImageRgb8(img)
+    }
+
+    #[tokio::test]
+    async fn jpeg_strategy_compresses_and_keeps_dimensions() {
+        let img = photo_like_image(256, 256);
+        let mut original = Vec::new();
+        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut original, 90);
+        img.write_with_encoder(encoder).unwrap();
+
+        let config = crate::config::AppConfig::default();
+        let result = JpegCompressionStrategy
+            .compress(&original, &config)
+            .await
+            .unwrap();
+
+        assert_eq!(result.format, ImageFormat::Jpeg);
+        let decoded = image::load_from_memory(&result.data).unwrap();
+        assert_eq!(decoded.width(), 256);
+        assert_eq!(decoded.height(), 256);
+        assert!(
+            result.data.len() < original.len(),
+            "compressed {} should be smaller than original {}",
+            result.data.len(),
+            original.len()
+        );
     }
 }

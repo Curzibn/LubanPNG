@@ -10,23 +10,19 @@ pub struct PngCompressionStrategy;
 
 #[async_trait]
 impl CompressionStrategy for PngCompressionStrategy {
-    fn format(&self) -> ImageFormat {
-        ImageFormat::Png
-    }
-
     async fn compress(
         &self,
         input: &[u8],
         config: &AppConfig,
     ) -> AppResult<CompressionResult> {
         let img = image::load_from_memory(input)?;
-        let result = compress_png_smart(
+        let data = compress_png_smart(
             img,
             input.to_vec(),
             &config.png_smart,
             config.imagequant.min_quality,
             config.imagequant.max_quality,
         )?;
-        Ok(CompressionResult::new(result.data, ImageFormat::Png))
+        Ok(CompressionResult::new(data, ImageFormat::Png))
     }
 }

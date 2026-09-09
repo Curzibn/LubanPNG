@@ -10,10 +10,6 @@ pub struct GifCompressionStrategy;
 
 #[async_trait]
 impl CompressionStrategy for GifCompressionStrategy {
-    fn format(&self) -> ImageFormat {
-        ImageFormat::Gif
-    }
-
     async fn compress(
         &self,
         input: &[u8],
@@ -76,7 +72,53 @@ impl CompressionStrategy for GifCompressionStrategy {
         let mut data = Vec::new();
         quantized_img.write_to(&mut Cursor::new(&mut data), ImageFormat::Gif)
             .map_err(|e| crate::error::AppError::compression(format!("图片编码失败: {}", e)))?;
-        
+
         Ok(CompressionResult::new(data, ImageFormat::Gif))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn palette_image(w: u32, h: u32) -> DynamicImage {
+        let mut img = image::RgbaImage::new(w, h);
+        let palette = [
+            (255, 0, 0),
+            (0, 255, 0),
+            (0, 0, 255),
+            (255, 255, 0),
+            (255, 0, 255),
+            (0, 255, 255),
+            (128, 128, 128),
+            (0, 0, 0),
+        ];
+        for y in 0..h {
+            for x in 0..w {
+                let c = palette[((x / 8 + y / 8) % 8) as usize];
+                img.put_pixel(x, y, image::Rgba([c.0, c.1, c.2, 255]));
+            }
+        }
+        DynamicImage::ImageRgba8(img)
+    }
+
+    #[tokio::test]
+    async fn gif_strategy_produces_valid_gif() {
+        let img = palette_image(64, 64);
+        let mut original = Vec::new();
+        img.write_to(&mut Cursor::new(&mut original), ImageFormat::Gif)
+            .unwrap();
+
+        let config = crate::config::AppConfig::default();
+        let result = GifCompressionStrategy
+            .compress(&original, &config)
+            .await
+            .unwrap();
+
+        assert_eq!(result.format, ImageFormat::Gif);
+        assert_eq!(&result.data[..3], b"GIF");
+        let decoded = image::load_from_memory(&result.data).unwrap();
+        assert_eq!(decoded.width(), 64);
+        assert_eq!(decoded.height(), 64);
     }
 }

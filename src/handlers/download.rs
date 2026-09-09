@@ -24,7 +24,23 @@ pub async fn download_file(
     State(_state): State<Arc<AppState>>,
     Path(filename): Path<String>,
 ) -> impl IntoResponse {
-    let file_path = format!("outputs/{}", filename);
+    let safe_name = std::path::Path::new(&filename)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    if safe_name.is_empty() {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponseError::error(
+                codes::TASK_NOT_FOUND,
+                "文件不存在".to_string(),
+            )),
+        )
+            .into_response();
+    }
+
+    let output_dir = &crate::config::AppConfig::get().storage.output_dir;
+    let file_path = format!("{}/{}", output_dir, safe_name);
 
     match tokio::fs::read(&file_path).await {
         Ok(data) => {

@@ -27,53 +27,28 @@ pub fn optimize_with_oxipng(png_data: &[u8], level: u8) -> Result<Vec<u8>> {
     Ok(optimized)
 }
 
-pub struct PngCompressResult {
-    pub data: Vec<u8>,
-    pub used_imagequant: bool,
-    pub used_oxipng: bool,
-}
-
 pub fn compress_png_smart(
     img: DynamicImage,
     original_data: Vec<u8>,
     config: &PngSmartConfig,
     min_quality: u8,
     max_quality: u8,
-) -> Result<PngCompressResult> {
-    let mut used_imagequant = false;
+) -> Result<Vec<u8>> {
     let mut data_to_optimize = original_data;
-    
+
     if should_use_imagequant(&img, config) {
-        match try_imagequant(&img, min_quality, max_quality) {
-            Ok(quantized_data) => {
-                data_to_optimize = quantized_data;
-                used_imagequant = true;
-            }
-            Err(_) => {
-            }
+        if let Ok(quantized_data) = try_imagequant(&img, min_quality, max_quality) {
+            data_to_optimize = quantized_data;
         }
     }
-    
-    let mut final_data = data_to_optimize;
-    let mut used_oxipng = false;
-    
+
     if config.use_oxipng {
-        match optimize_with_oxipng(&final_data, config.oxipng_level) {
-            Ok(optimized) => {
-                final_data = optimized;
-                used_oxipng = true;
-            }
-            Err(e) => {
-                eprintln!("OxiPNG优化失败，使用原数据: {}", e);
-            }
+        if let Ok(optimized) = optimize_with_oxipng(&data_to_optimize, config.oxipng_level) {
+            data_to_optimize = optimized;
         }
     }
-    
-    Ok(PngCompressResult {
-        data: final_data,
-        used_imagequant,
-        used_oxipng,
-    })
+
+    Ok(data_to_optimize)
 }
 
 fn try_imagequant(
@@ -137,6 +112,89 @@ fn try_imagequant(
     let mut data = Vec::new();
     quantized_img.write_to(&mut Cursor::new(&mut data), ImageFormat::Png)
         .map_err(|e| anyhow::anyhow!("PNG编码失败: {}", e))?;
-    
+
     Ok(data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{DynamicImage, RgbaImage};
+
+    fn gradient_image(w: u32, h: u32) -> DynamicImage {
+        let mut img = RgbaImage::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                img.put_pixel(
+                    x,
+                    y,
+                    image::Rgba([
+                        (x % 256) as u8,
+                        (y % 256) as u8,
+                        ((x + y) % 256) as u8,
+                        255,
+                    ]),
+                );
+            }
+        }
+        DynamicImage::ImageRgba8(img)
+    }
+
+    #[test]
+    fn smart_png_compresses_and_keeps_dimensions() {
+        let img = gradient_image(512, 512);
+        let mut original = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut original), image::ImageFormat::Png)
+            .unwrap();
+
+        let config = crate::config::PngSmartConfig::default();
+        let compressed = compress_png_smart(
+            img,
+            original.clone(),
+            &config,
+            70,
+            100,
+        )
+        .unwrap();
+
+        let decoded = image::load_from_memory(&compressed).unwrap();
+        assert_eq!(decoded.width(), 512);
+        assert_eq!(decoded.height(), 512);
+        assert!(
+            compressed.len() < original.len(),
+            "compressed {} should be smaller than original {}",
+            compressed.len(),
+            original.len()
+        );
+    }
+
+    #[test]
+    fn oxipng_alone_shrinks_losslessly() {
+        let img = gradient_image(256, 256);
+        let mut original = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut original), image::ImageFormat::Png)
+            .unwrap();
+
+        let optimized = optimize_with_oxipng(&original, 4).unwrap();
+        assert!(optimized.len() < original.len());
+
+        let a = image::load_from_memory(&original).unwrap().to_rgba8();
+        let b = image::load_from_memory(&optimized).unwrap().to_rgba8();
+        assert_eq!(a, b, "oxipng must be lossless");
+    }
+
+    #[test]
+    fn imagequant_disabled_falls_back_to_oxipng() {
+        let img = gradient_image(128, 128);
+        let mut original = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut original), image::ImageFormat::Png)
+            .unwrap();
+
+        let config = crate::config::PngSmartConfig {
+            enabled: false,
+            ..Default::default()
+        };
+        let compressed = compress_png_smart(img, original.clone(), &config, 70, 100).unwrap();
+        assert!(compressed.len() < original.len());
+    }
 }

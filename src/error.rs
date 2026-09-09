@@ -36,10 +36,6 @@ impl AppError {
         Self::Compression(msg.into())
     }
 
-    pub fn config(msg: impl Into<String>) -> Self {
-        Self::Config(msg.into())
-    }
-
     pub fn status_code(&self) -> StatusCode {
         match self {
             AppError::Validation(_) => StatusCode::BAD_REQUEST,

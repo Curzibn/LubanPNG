@@ -16,6 +16,7 @@ pub struct AppState {
 #[derive(utoipa::ToSchema)]
 pub struct UploadForm {
     #[schema(value_type = String, format = Binary)]
+    #[allow(dead_code)]
     pub file: String,
 }
 
@@ -138,8 +139,6 @@ pub struct UploadResponse {
     #[schema(example = "550e8400-e29b-41d4-a716-446655440000")]
     pub task_id: String,
 }
-
-pub type TaskStatusResponse = crate::services::compression::TaskStatusResponse;
 
 #[derive(serde::Serialize, ToSchema)]
 pub struct TaskStatusResponseSchema {
