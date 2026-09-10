@@ -18,14 +18,23 @@ const sections = [
 type SectionId = (typeof sections)[number]["id"]
 
 const ACTIVE_OFFSET = 160
+const FIRST_SECTION: SectionId = "auth"
+const LAST_SECTION: SectionId = "cli"
+
+const scrolledToBottom = (): boolean =>
+  window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 1
 
 const useActiveSection = (): SectionId => {
-  const [active, setActive] = useState<SectionId>("auth")
+  const [active, setActive] = useState<SectionId>(FIRST_SECTION)
   useEffect(() => {
     let frame = 0
     const measure = () => {
       frame = 0
-      let current: SectionId = "auth"
+      if (scrolledToBottom()) {
+        setActive(LAST_SECTION)
+        return
+      }
+      let current: SectionId = FIRST_SECTION
       for (const section of sections) {
         const element = document.getElementById(section.id)
         if (element && element.getBoundingClientRect().top <= ACTIVE_OFFSET) current = section.id
