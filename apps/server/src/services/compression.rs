@@ -44,6 +44,7 @@ pub struct TaskStatusView {
     pub output_format: Option<String>,
     #[schema(example = 1)]
     pub quota_units: i32,
+    pub no_gain: bool,
     pub error_msg: Option<String>,
     #[schema(example = 1691234567)]
     pub created_at: i64,
@@ -165,7 +166,13 @@ impl CompressionService {
             .await
         {
             self.quota
-                .refund(subject_type, subject.id, &snapshot.period_key, task_id, units)
+                .refund(
+                    subject_type,
+                    subject.id,
+                    &snapshot.period_key,
+                    task_id,
+                    units,
+                )
                 .await?;
             return Err(err);
         }
@@ -191,7 +198,13 @@ impl CompressionService {
             Ok(record) => Ok(record),
             Err(err) => {
                 self.quota
-                    .refund(subject_type, subject.id, &snapshot.period_key, task_id, units)
+                    .refund(
+                        subject_type,
+                        subject.id,
+                        &snapshot.period_key,
+                        task_id,
+                        units,
+                    )
                     .await?;
                 let _ = self.storage.delete(&input_key).await;
                 Err(err)
@@ -223,6 +236,10 @@ impl CompressionService {
             target_format: task.target_format.clone(),
             output_format: task.output_format().map(str::to_string),
             quota_units: task.quota_units(),
+            no_gain: task.conversion().is_none()
+                && task
+                    .compressed_size
+                    .is_some_and(|size| size == task.original_size),
             error_msg: task.error_msg.clone(),
             created_at: task.created_at.timestamp(),
             completed_at: task.completed_at.map(|t| t.timestamp()),
@@ -346,15 +363,27 @@ impl CompressionService {
         self.tasks
             .complete(task.id, stored_size, &output_key, expires_at)
             .await?;
-        self.quota
-            .settle(
-                &task.subject_type,
-                task.subject_id,
-                &task.quota_period,
-                task.id,
-                task.quota_units(),
-            )
-            .await?;
+        if keep_original {
+            self.quota
+                .refund(
+                    &task.subject_type,
+                    task.subject_id,
+                    &task.quota_period,
+                    task.id,
+                    task.quota_units(),
+                )
+                .await?;
+        } else {
+            self.quota
+                .settle(
+                    &task.subject_type,
+                    task.subject_id,
+                    &task.quota_period,
+                    task.id,
+                    task.quota_units(),
+                )
+                .await?;
+        }
         let _ = self.storage.delete(&task.input_key).await;
         Ok(())
     }

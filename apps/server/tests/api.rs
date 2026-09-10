@@ -245,7 +245,12 @@ impl TestApp {
         .await
     }
 
-    async fn upload_with_ok(&self, filename: &str, content: &[u8], fields: &[(&str, &str)]) -> String {
+    async fn upload_with_ok(
+        &self,
+        filename: &str,
+        content: &[u8],
+        fields: &[(&str, &str)],
+    ) -> String {
         let reply = self.upload_with(filename, content, fields).await;
         assert_eq!(
             reply.status,
@@ -346,7 +351,11 @@ fn multipart_body(field: &str, filename: &str, content: &[u8]) -> (String, Body)
     )
 }
 
-fn multipart_with_fields(filename: &str, content: &[u8], fields: &[(&str, &str)]) -> (String, Body) {
+fn multipart_with_fields(
+    filename: &str,
+    content: &[u8],
+    fields: &[(&str, &str)],
+) -> (String, Body) {
     let boundary = "----LubanPNGTestBoundary";
     let mut body = Vec::new();
     for (name, value) in fields {
@@ -415,7 +424,12 @@ fn sample_avif(w: u32, h: u32, quality: u8) -> Vec<u8> {
 fn transparent_png(w: u32, h: u32) -> Vec<u8> {
     let mut img = image::RgbaImage::new(w, h);
     for (x, y, pixel) in img.enumerate_pixels_mut() {
-        *pixel = image::Rgba([(x * 4) as u8, (y * 4) as u8, 120, if x < w / 2 { 0 } else { 255 }]);
+        *pixel = image::Rgba([
+            (x * 4) as u8,
+            (y * 4) as u8,
+            120,
+            if x < w / 2 { 0 } else { 255 },
+        ]);
     }
     let mut buf = Vec::new();
     image::DynamicImage::ImageRgba8(img)
@@ -1350,7 +1364,10 @@ fn webp_full_pipeline_recompresses_lossless_source() {
             .await
             .unwrap();
         assert_eq!(&stored[8..12], b"WEBP");
-        assert_eq!(image::load_from_memory(&stored).unwrap().dimensions(), (128, 128));
+        assert_eq!(
+            image::load_from_memory(&stored).unwrap().dimensions(),
+            (128, 128)
+        );
     });
 }
 
@@ -1369,7 +1386,10 @@ fn avif_full_pipeline_decodes_and_recompresses() {
             .get(&format!("outputs/free/{}.avif", task_id))
             .await
             .unwrap();
-        assert_eq!(image::load_from_memory(&stored).unwrap().dimensions(), (128, 96));
+        assert_eq!(
+            image::load_from_memory(&stored).unwrap().dimensions(),
+            (128, 96)
+        );
     });
 }
 
@@ -1454,7 +1474,11 @@ fn transparent_png_to_jpeg_needs_background_and_refunds_both_units() {
             .unwrap();
         let decoded = image::load_from_memory(&stored).unwrap().to_rgb8();
         let corner = decoded.get_pixel(0, 0);
-        assert!(corner[0] > 230 && corner[1] > 230 && corner[2] > 230, "{:?}", corner);
+        assert!(
+            corner[0] > 230 && corner[1] > 230 && corner[2] > 230,
+            "{:?}",
+            corner
+        );
         let me = app.get("/v1/me").await.json()["data"].clone();
         assert_eq!(me["quota"]["used"], 2);
     });
@@ -1469,7 +1493,11 @@ fn invalid_conversion_fields_are_rejected_before_quota() {
         assert_eq!(bad_target.status, StatusCode::BAD_REQUEST);
         assert_eq!(bad_target.json()["code"], 1001);
         let bad_background = app
-            .upload_with("a.png", &png, &[("convert", "jpeg"), ("background", "white")])
+            .upload_with(
+                "a.png",
+                &png,
+                &[("convert", "jpeg"), ("background", "white")],
+            )
             .await;
         assert_eq!(bad_background.status, StatusCode::BAD_REQUEST);
         assert_eq!(bad_background.json()["code"], 1001);
@@ -1522,7 +1550,11 @@ fn converting_an_animation_fails_clearly_and_refunds() {
             .await;
         let data = app.wait_final(&task_id).await;
         assert_eq!(data["status"], "failed", "{}", data);
-        assert!(data["error_msg"].as_str().unwrap().contains("动图"), "{}", data);
+        assert!(
+            data["error_msg"].as_str().unwrap().contains("动图"),
+            "{}",
+            data
+        );
         let me = app.get("/v1/me").await.json()["data"].clone();
         assert_eq!(me["quota"]["remaining"], 5);
     });
@@ -1544,5 +1576,78 @@ fn heic_uploads_get_a_specific_rejection() {
         assert!(body["msg"].as_str().unwrap().contains("HEIC"), "{}", body);
         let me = app.get("/v1/me").await.json()["data"].clone();
         assert_eq!(me["quota"]["remaining"], 5);
+    });
+}
+
+#[test]
+fn no_gain_task_refunds_quota_while_compressing_task_settles() {
+    run(async {
+        let app = test_app().await;
+        let pool = db::connect(&test_config().database).await.unwrap();
+
+        let low = gradient_jpeg(64, 64, 25);
+        let low_id = app.upload_ok("low.jpg", &low, None).await;
+        let low_task = app.wait_final(&low_id).await;
+        assert_eq!(low_task["status"], "completed", "{}", low_task);
+        assert_eq!(low_task["no_gain"], true, "{}", low_task);
+        assert_eq!(
+            low_task["compressed_size"].as_u64().unwrap(),
+            low.len() as u64
+        );
+        assert_eq!(low_task["downloadable"], true);
+
+        let after_low = app.get("/v1/me").await.json()["data"].clone();
+        assert_eq!(after_low["quota"]["used"], 0);
+        assert_eq!(after_low["quota"]["remaining"], 5);
+        let period_key = after_low["quota"]["period_key"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let low_uuid = uuid::Uuid::parse_str(&low_id).unwrap();
+        let low_ledger: (i64, i64, i64) = sqlx::query_as(
+            "SELECT count(*) FILTER (WHERE kind = 'reserve'),
+                    count(*) FILTER (WHERE kind = 'refund'),
+                    count(*) FILTER (WHERE kind = 'settle')
+             FROM quota_ledger WHERE task_id = $1",
+        )
+        .bind(low_uuid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(low_ledger, (1, 1, 0));
+        let (used, held): (i32, i32) = sqlx::query_as(
+            "SELECT used, held FROM quota_balances
+             WHERE subject_type = 'device' AND subject_id = $1 AND period_key = $2",
+        )
+        .bind(device_id(&app))
+        .bind(&period_key)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!((used, held), (0, 0));
+
+        let high = gradient_jpeg(256, 256, 90);
+        let high_id = app.upload_ok("high.jpg", &high, None).await;
+        let high_task = app.wait_final(&high_id).await;
+        assert_eq!(high_task["status"], "completed", "{}", high_task);
+        assert_eq!(high_task["no_gain"], false, "{}", high_task);
+        assert!(high_task["compressed_size"].as_u64().unwrap() < high.len() as u64);
+
+        let after_high = app.get("/v1/me").await.json()["data"].clone();
+        assert_eq!(after_high["quota"]["used"], 1);
+        assert_eq!(after_high["quota"]["remaining"], 4);
+        let high_uuid = uuid::Uuid::parse_str(&high_id).unwrap();
+        let high_ledger: (i64, i64, i64) = sqlx::query_as(
+            "SELECT count(*) FILTER (WHERE kind = 'reserve'),
+                    count(*) FILTER (WHERE kind = 'refund'),
+                    count(*) FILTER (WHERE kind = 'settle')
+             FROM quota_ledger WHERE task_id = $1",
+        )
+        .bind(high_uuid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(high_ledger, (1, 0, 1));
     });
 }
