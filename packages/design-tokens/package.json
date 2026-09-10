@@ -1,0 +1,26 @@
+{
+  "name": "@lubanpng/design-tokens",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./theme.css": "./dist/theme.css",
+    "./favicon.svg": "./dist/favicon.svg",
+    "./tokens": "./tokens.ts"
+  },
+  "files": [
+    "dist",
+    "tokens.ts"
+  ],
+  "scripts": {
+    "generate": "node generate.ts",
+    "postinstall": "node generate.ts",
+    "test": "vitest run",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.2",
+    "typescript": "7.0.2",
+    "vitest": "5.0.0"
+  }
+}

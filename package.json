@@ -1,0 +1,19 @@
+{
+  "name": "lubanpng-workspace",
+  "private": true,
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "pnpm --filter @lubanpng/design-tokens generate && pnpm --filter @lubanpng/web build",
+    "dev": "pnpm --filter @lubanpng/design-tokens generate && pnpm --filter @lubanpng/web dev",
+    "test": "pnpm -r run test",
+    "lint": "pnpm -r run lint"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

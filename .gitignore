@@ -6,3 +6,6 @@ config.yaml
 config.json
 .env
 .DS_Store
+node_modules/
+apps/web/dist/
+packages/design-tokens/dist/

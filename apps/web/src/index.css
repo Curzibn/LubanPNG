@@ -1,0 +1,64 @@
+@import "tailwindcss";
+@import "@lubanpng/design-tokens/theme.css";
+
+@layer base {
+  html {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    min-height: 100dvh;
+  }
+
+  :focus-visible {
+    outline: var(--border-width-rule) solid var(--color-vermilion);
+    outline-offset: --spacing(0.5);
+  }
+}
+
+@utility grid-dashboard {
+  grid-template-columns: var(--container-aside) minmax(0, 1fr);
+}
+
+@utility grid-developers {
+  grid-template-columns: var(--container-sidebar) minmax(0, 1fr);
+}
+
+@utility grid-result-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name pill"
+    "bars bars"
+    "sizes download";
+}
+
+@utility grid-result-row {
+  grid-template-columns: --spacing(14) minmax(0, 5fr) minmax(0, 4fr) minmax(0, 5fr) auto --spacing(11);
+  grid-template-areas: "thumb name sizes bars pill download";
+}
+
+@utility area-thumb {
+  grid-area: thumb;
+}
+
+@utility area-name {
+  grid-area: name;
+}
+
+@utility area-sizes {
+  grid-area: sizes;
+}
+
+@utility area-bars {
+  grid-area: bars;
+}
+
+@utility area-pill {
+  grid-area: pill;
+}
+
+@utility area-download {
+  grid-area: download;
+}
