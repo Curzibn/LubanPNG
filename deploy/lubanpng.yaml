@@ -32,7 +32,7 @@ spec:
                     app: lubanpng
       containers:
         - name: server
-          image: registry.opus.wizthink.cn:5000/lubanpng/server@sha256:ace0d46989117ccd45e325d01e661044d5af39beb04fc4a689e8f7e7dceec706
+          image: registry.opus.wizthink.cn:5000/lubanpng/server@sha256:4d437960aaea9a6d43a77cfcfe1d2624a0aa10f48bad2c96223ad0ac54f690b0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -57,6 +57,14 @@ spec:
               value: lubanpng
             - name: APP_AUTH__SECURE_COOKIES
               value: "true"
+            - name: APP_MAIL__SMTP_HOST
+              value: smtpdm.aliyun.com
+            - name: APP_MAIL__SMTP_PORT
+              value: "465"
+            - name: APP_MAIL__USERNAME
+              value: noreply@email.wizthink.cn
+            - name: APP_MAIL__FROM
+              value: "LubanPNG <noreply@email.wizthink.cn>"
             - name: RUST_LOG
               value: info,sqlx=warn,hyper=warn
           resources:
