@@ -1,8 +1,7 @@
-use serde::{Deserialize, Serialize};
-use std::time::{SystemTime, UNIX_EPOCH};
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskStatus {
     Pending,
     Processing,
@@ -19,75 +18,68 @@ impl TaskStatus {
             TaskStatus::Failed => "failed",
         }
     }
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CompressTask {
-    pub id: String,
-    pub status: TaskStatus,
-    pub progress: u8,
-    pub original_size: u64,
-    pub compressed_size: Option<u64>,
-    pub original_path: String,
-    pub original_filename: Option<String>,
-    pub compressed_path: Option<String>,
-    pub error_msg: Option<String>,
-    pub created_at: u64,
-    pub completed_at: Option<u64>,
-    pub queue_position: Option<usize>,
-}
-
-impl CompressTask {
-    pub fn new(original_path: String, original_size: u64) -> Self {
-        Self {
-            id: Uuid::new_v4().to_string(),
-            status: TaskStatus::Pending,
-            progress: 0,
-            original_size,
-            compressed_size: None,
-            original_path,
-            original_filename: None,
-            compressed_path: None,
-            error_msg: None,
-            created_at: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            completed_at: None,
-            queue_position: None,
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "pending" => Some(TaskStatus::Pending),
+            "processing" => Some(TaskStatus::Processing),
+            "completed" => Some(TaskStatus::Completed),
+            "failed" => Some(TaskStatus::Failed),
+            _ => None,
         }
     }
 
-    pub fn mark_processing(&mut self) {
-        self.status = TaskStatus::Processing;
-        self.progress = 10;
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, TaskStatus::Completed | TaskStatus::Failed)
+    }
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct TaskRecord {
+    pub id: Uuid,
+    pub subject_type: String,
+    pub subject_id: Uuid,
+    pub source: String,
+    pub status: String,
+    pub progress: i16,
+    pub original_name: String,
+    pub original_size: i64,
+    pub compressed_size: Option<i64>,
+    pub input_key: String,
+    pub output_key: Option<String>,
+    pub error_msg: Option<String>,
+    pub quota_period: String,
+    pub locked_by: Option<String>,
+    pub locked_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+impl TaskRecord {
+    pub fn status(&self) -> TaskStatus {
+        TaskStatus::parse(&self.status).unwrap_or(TaskStatus::Failed)
     }
 
-    pub fn update_progress(&mut self, progress: u8) {
-        self.progress = progress.min(100);
+    pub fn is_terminal(&self) -> bool {
+        self.status().is_terminal()
     }
 
-    pub fn mark_completed(&mut self, compressed_size: u64, compressed_path: String) {
-        self.status = TaskStatus::Completed;
-        self.progress = 100;
-        self.compressed_size = Some(compressed_size);
-        self.compressed_path = Some(compressed_path);
-        self.completed_at = Some(
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-        );
+    pub fn downloadable(&self, now: DateTime<Utc>) -> bool {
+        self.status() == TaskStatus::Completed
+            && self.output_key.is_some()
+            && self.expires_at.map(|at| at > now).unwrap_or(false)
     }
 
-    pub fn mark_failed(&mut self, error_msg: String) {
-        self.status = TaskStatus::Failed;
-        self.error_msg = Some(error_msg);
-        self.completed_at = Some(
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-        );
+    pub fn download_filename(&self) -> Option<String> {
+        let key = self.output_key.as_ref()?;
+        let extension = key.rsplit_once('.').map(|(_, ext)| ext)?;
+        Some(format!("{}.{}", self.id, extension))
+    }
+
+    pub fn download_path(&self) -> Option<String> {
+        self.download_filename()
+            .map(|name| format!("/v1/images/download/{}", name))
     }
 }

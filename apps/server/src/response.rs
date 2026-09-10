@@ -25,7 +25,11 @@ pub mod codes {
     pub const FILE_TOO_LARGE: i32 = 1004;
     pub const SERVER_ERROR: i32 = 2001;
     pub const THIRD_PARTY_ERROR: i32 = 2002;
+    pub const SERVICE_UNAVAILABLE: i32 = 2003;
     pub const TASK_NOT_FOUND: i32 = 3003;
+    pub const UNAUTHORIZED: i32 = 4001;
+    pub const FORBIDDEN: i32 = 4002;
+    pub const QUOTA_EXCEEDED: i32 = 4003;
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -44,6 +48,14 @@ impl ApiResponseError {
             code,
             msg,
             data: None,
+        }
+    }
+
+    pub fn with_data(code: i32, msg: String, data: serde_json::Value) -> Self {
+        Self {
+            code,
+            msg,
+            data: Some(data),
         }
     }
 }

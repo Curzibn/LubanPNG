@@ -1,131 +1,66 @@
 use serde::{Deserialize, Serialize};
-use std::sync::OnceLock;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct AppConfig {
     pub server: ServerConfig,
     pub imagequant: ImageQuantConfig,
-    #[serde(default)]
     pub jpeg_smart: JpegSmartConfig,
-    #[serde(default)]
     pub png_smart: PngSmartConfig,
-    #[serde(default)]
+    pub database: DatabaseConfig,
     pub storage: StorageConfig,
+    pub auth: AuthConfig,
+    pub mail: MailConfig,
+    pub web: WebConfig,
+    pub limits: LimitsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
-    #[serde(default = "default_max_upload_size")]
     pub max_upload_size: u64,
-    #[serde(default = "default_max_concurrent_tasks")]
     pub max_concurrent_tasks: usize,
 }
 
-fn default_max_upload_size() -> u64 {
-    50 * 1024 * 1024
-}
-
-fn default_max_concurrent_tasks() -> usize {
-    std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(8)
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            host: "0.0.0.0".to_string(),
+            port: 3000,
+            max_upload_size: 50 * 1024 * 1024,
+            max_concurrent_tasks: std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(8),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ImageQuantConfig {
     pub min_quality: u8,
     pub max_quality: u8,
 }
 
+impl Default for ImageQuantConfig {
+    fn default() -> Self {
+        Self {
+            min_quality: 70,
+            max_quality: 100,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct JpegSmartConfig {
     pub enabled: bool,
     pub skip_low_quality_threshold: u8,
     pub safe_compress_threshold: u8,
     pub min_ssim_score: Option<f64>,
     pub adaptive_quality: bool,
-}
-
-static CONFIG: OnceLock<AppConfig> = OnceLock::new();
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StorageConfig {
-    #[serde(default = "default_upload_dir")]
-    pub upload_dir: String,
-    #[serde(default = "default_output_dir")]
-    pub output_dir: String,
-}
-
-fn default_upload_dir() -> String {
-    "uploads".to_string()
-}
-
-fn default_output_dir() -> String {
-    "outputs".to_string()
-}
-
-impl Default for StorageConfig {
-    fn default() -> Self {
-        Self {
-            upload_dir: default_upload_dir(),
-            output_dir: default_output_dir(),
-        }
-    }
-}
-
-impl AppConfig {
-    pub fn load() -> Result<Self, config::ConfigError> {
-        let defaults = config::Config::try_from(&Self::default())?;
-        let config = config::Config::builder()
-            .add_source(defaults)
-            .add_source(config::File::with_name("config").required(false))
-            .add_source(config::Environment::with_prefix("APP").separator("_"))
-            .build()?;
-
-        config.try_deserialize()
-    }
-
-    pub fn get() -> &'static AppConfig {
-        CONFIG.get_or_init(|| {
-            Self::load().unwrap_or_else(|e| {
-                eprintln!("加载配置失败: {}，使用默认配置", e);
-                Self::default()
-            })
-        })
-    }
-
-    pub fn init() -> Result<(), config::ConfigError> {
-        if CONFIG.get().is_some() {
-            return Ok(());
-        }
-        let cfg = Self::load()?;
-        CONFIG.set(cfg).map_err(|_| {
-            config::ConfigError::Message("配置已初始化".to_string())
-        })?;
-        Ok(())
-    }
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            server: ServerConfig {
-                host: "0.0.0.0".to_string(),
-                port: 3000,
-                max_upload_size: default_max_upload_size(),
-                max_concurrent_tasks: default_max_concurrent_tasks(),
-            },
-            imagequant: ImageQuantConfig {
-                min_quality: 70,
-                max_quality: 100,
-            },
-            jpeg_smart: JpegSmartConfig::default(),
-            png_smart: PngSmartConfig::default(),
-            storage: StorageConfig::default(),
-        }
-    }
 }
 
 impl Default for JpegSmartConfig {
@@ -141,6 +76,7 @@ impl Default for JpegSmartConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PngSmartConfig {
     pub enabled: bool,
     pub skip_palette: bool,
@@ -156,5 +92,162 @@ impl Default for PngSmartConfig {
             use_oxipng: true,
             oxipng_level: 4,
         }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DatabaseConfig {
+    pub url: String,
+    pub max_connections: u32,
+}
+
+impl Default for DatabaseConfig {
+    fn default() -> Self {
+        Self {
+            url: "postgres://localhost/lubanpng".to_string(),
+            max_connections: 8,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct StorageConfig {
+    pub endpoint: String,
+    pub public_endpoint: String,
+    pub bucket: String,
+    pub access_key: String,
+    pub secret_key: String,
+    pub region: String,
+    pub presign_ttl_secs: u64,
+}
+
+impl Default for StorageConfig {
+    fn default() -> Self {
+        Self {
+            endpoint: "http://127.0.0.1:9000".to_string(),
+            public_endpoint: String::new(),
+            bucket: "lubanpng".to_string(),
+            access_key: String::new(),
+            secret_key: String::new(),
+            region: "us-east-1".to_string(),
+            presign_ttl_secs: 600,
+        }
+    }
+}
+
+impl StorageConfig {
+    pub fn public_endpoint_or_internal(&self) -> &str {
+        if self.public_endpoint.is_empty() {
+            &self.endpoint
+        } else {
+            &self.public_endpoint
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AuthConfig {
+    pub cookie_secret: String,
+    pub secure_cookies: bool,
+    pub session_ttl_days: i64,
+    pub otp_ttl_secs: i64,
+    pub otp_max_attempts: i32,
+    pub otp_resend_secs: i64,
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self {
+            cookie_secret: String::new(),
+            secure_cookies: true,
+            session_ttl_days: 30,
+            otp_ttl_secs: 600,
+            otp_max_attempts: 5,
+            otp_resend_secs: 60,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MailConfig {
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    pub username: String,
+    pub password: String,
+    pub from: String,
+}
+
+impl Default for MailConfig {
+    fn default() -> Self {
+        Self {
+            smtp_host: String::new(),
+            smtp_port: 465,
+            username: String::new(),
+            password: String::new(),
+            from: "LubanPNG <noreply@example.com>".to_string(),
+        }
+    }
+}
+
+impl MailConfig {
+    pub fn enabled(&self) -> bool {
+        !self.smtp_host.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WebConfig {
+    pub static_dir: String,
+}
+
+impl Default for WebConfig {
+    fn default() -> Self {
+        Self {
+            static_dir: "web".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LimitsConfig {
+    pub anonymous_uploads_per_ip_per_day: u32,
+    pub otp_per_email_per_10min: u32,
+    pub otp_per_ip_per_hour: u32,
+    pub status_wait_max_secs: u64,
+    pub worker_stale_secs: i64,
+}
+
+impl Default for LimitsConfig {
+    fn default() -> Self {
+        Self {
+            anonymous_uploads_per_ip_per_day: 30,
+            otp_per_email_per_10min: 3,
+            otp_per_ip_per_hour: 20,
+            status_wait_max_secs: 30,
+            worker_stale_secs: 600,
+        }
+    }
+}
+
+impl AppConfig {
+    pub fn load() -> Result<Self, config::ConfigError> {
+        let defaults = config::Config::try_from(&Self::default())?;
+        let config = config::Config::builder()
+            .add_source(defaults)
+            .add_source(config::File::with_name("config").required(false))
+            .add_source(
+                config::Environment::with_prefix("APP")
+                    .separator("__")
+                    .try_parsing(true),
+            )
+            .build()?;
+
+        config.try_deserialize()
     }
 }

@@ -1,11 +1,8 @@
-use crate::handlers::image::AppState;
-use crate::response::{ApiResponseError, codes};
-use axum::{
-    extract::{Path, State},
-    http::{header, StatusCode},
-    response::IntoResponse,
-    Json,
-};
+use crate::app::AppState;
+use crate::error::AppError;
+use crate::response::ApiResponseError;
+use axum::extract::{Path, State};
+use axum::response::Redirect;
 use std::sync::Arc;
 
 #[utoipa::path(
@@ -13,61 +10,18 @@ use std::sync::Arc;
     path = "/v1/images/download/{filename}",
     tag = "图片压缩",
     params(
-        ("filename" = String, Path, description = "压缩后的文件名")
+        ("filename" = String, Path, description = "任务状态里 compressed_url 的文件名")
     ),
     responses(
-        (status = 200, description = "下载成功", content_type = "image/png"),
-        (status = 404, description = "文件不存在", body = ApiResponseError)
-    )
+        (status = 302, description = "跳转到 10 分钟内有效的对象存储地址"),
+        (status = 404, description = "文件不存在或已过期", body = ApiResponseError)
+    ),
+    security(("api_key" = []))
 )]
 pub async fn download_file(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Path(filename): Path<String>,
-) -> impl IntoResponse {
-    let safe_name = std::path::Path::new(&filename)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
-    if safe_name.is_empty() {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(ApiResponseError::error(
-                codes::TASK_NOT_FOUND,
-                "文件不存在".to_string(),
-            )),
-        )
-            .into_response();
-    }
-
-    let output_dir = &crate::config::AppConfig::get().storage.output_dir;
-    let file_path = format!("{}/{}", output_dir, safe_name);
-
-    match tokio::fs::read(&file_path).await {
-        Ok(data) => {
-            let content_type = if filename.ends_with(".png") {
-                "image/png"
-            } else if filename.ends_with(".jpg") || filename.ends_with(".jpeg") {
-                "image/jpeg"
-            } else if filename.ends_with(".gif") {
-                "image/gif"
-            } else {
-                "application/octet-stream"
-            };
-
-            (
-                StatusCode::OK,
-                [(header::CONTENT_TYPE, content_type)],
-                data,
-            )
-                .into_response()
-        }
-        Err(_) => (
-            StatusCode::NOT_FOUND,
-            Json(ApiResponseError::error(
-                codes::TASK_NOT_FOUND,
-                "文件不存在".to_string(),
-            )),
-        )
-            .into_response(),
-    }
+) -> Result<Redirect, AppError> {
+    let url = state.compression.download_url(&filename).await?;
+    Ok(Redirect::temporary(&url))
 }

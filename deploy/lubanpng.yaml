@@ -1,0 +1,122 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lubanpng
+  namespace: lubanpng
+  labels:
+    app: lubanpng
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: lubanpng
+  template:
+    metadata:
+      labels:
+        app: lubanpng
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: lubanpng
+      containers:
+        - name: server
+          image: registry.opus.wizthink.cn:5000/lubanpng/server:IMAGE_TAG
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - secretRef:
+                name: lubanpng-runtime-env
+          env:
+            - name: APP_SERVER__HOST
+              value: "0.0.0.0"
+            - name: APP_SERVER__PORT
+              value: "3000"
+            - name: APP_SERVER__MAX_CONCURRENT_TASKS
+              value: "2"
+            - name: APP_WEB__STATIC_DIR
+              value: /app/web
+            - name: APP_STORAGE__ENDPOINT
+              value: http://opusstore.opus-storage.svc:9000
+            - name: APP_STORAGE__PUBLIC_ENDPOINT
+              value: https://minio.k8s.opus.wizthink.cn
+            - name: APP_STORAGE__BUCKET
+              value: lubanpng
+            - name: APP_AUTH__SECURE_COOKIES
+              value: "true"
+            - name: RUST_LOG
+              value: info,sqlx=warn,hyper=warn
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 1536Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lubanpng
+  namespace: lubanpng
+spec:
+  selector:
+    app: lubanpng
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lubanpng
+  namespace: lubanpng
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: lubanpng.wizthink.cn
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: lubanpng
+                port:
+                  name: http
+    - host: lubanpng.k8s.opus.wizthink.cn
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: lubanpng
+                port:
+                  name: http

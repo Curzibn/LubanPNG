@@ -1,23 +1,35 @@
+use crate::app::AppState;
+use crate::domain::subject::Subject;
 use crate::error::AppError;
+use crate::handlers::extract::ClientMeta;
 use crate::response::{ApiResponse, ApiResponseError};
-use crate::services::CompressionService;
-use axum::{
-    extract::{Multipart, Path, State},
-    response::Json,
-};
+use crate::services::compression::TaskStatusView;
+use axum::extract::{Multipart, Path, Query, State};
+use axum::{Extension, Json};
+use bytes::Bytes;
+use serde::Deserialize;
 use std::sync::Arc;
-use utoipa::ToSchema;
+use std::time::Duration;
+use utoipa::{IntoParams, ToSchema};
+use uuid::Uuid;
 
-#[derive(Clone)]
-pub struct AppState {
-    pub compression_service: Arc<dyn CompressionService>,
-}
-
-#[derive(utoipa::ToSchema)]
+#[derive(ToSchema)]
 pub struct UploadForm {
     #[schema(value_type = String, format = Binary)]
     #[allow(dead_code)]
     pub file: String,
+}
+
+#[derive(serde::Serialize, ToSchema)]
+pub struct UploadResponse {
+    #[schema(example = "550e8400-e29b-41d4-a716-446655440000")]
+    pub task_id: String,
+}
+
+#[derive(Deserialize, IntoParams)]
+pub struct StatusQuery {
+    #[param(example = 30)]
+    pub wait: Option<u64>,
 }
 
 #[utoipa::path(
@@ -27,26 +39,42 @@ pub struct UploadForm {
     request_body(
         content = UploadForm,
         content_type = "multipart/form-data",
-        description = "上传图片文件进行压缩",
+        description = "上传一张 PNG / JPEG / GIF 图片，入队压缩并扣减 1 次额度",
     ),
     responses(
-        (status = 200, description = "上传成功", body = ApiResponse<UploadResponse>),
-        (status = 400, description = "参数错误", body = ApiResponseError),
-        (status = 500, description = "服务器错误", body = ApiResponseError),
-    )
+        (status = 200, description = "已入队", body = ApiResponse<UploadResponse>),
+        (status = 400, description = "参数错误或不支持的格式", body = ApiResponseError),
+        (status = 413, description = "文件超过当前套餐上限", body = ApiResponseError),
+        (status = 429, description = "本期额度用尽或触发限速", body = ApiResponseError),
+    ),
+    security(("api_key" = []))
 )]
 pub async fn upload_image(
     State(state): State<Arc<AppState>>,
+    Extension(subject): Extension<Subject>,
+    Extension(meta): Extension<ClientMeta>,
     multipart: Multipart,
 ) -> Result<Json<ApiResponse<UploadResponse>>, AppError> {
-    let (file_data, filename) = parse_multipart(multipart).await?;
-    
-    let task_id = state
-        .compression_service
-        .compress_image(file_data, filename)
-        .await?;
-    
-    Ok(Json(ApiResponse::success(UploadResponse { task_id })))
+    let (data, filename) = parse_multipart(multipart, state.config.server.max_upload_size).await?;
+    if !subject.is_account() {
+        let allowed = state
+            .rate_limits
+            .hit(
+                &format!("upload:ip:{}", meta.ip),
+                86_400,
+                state.config.limits.anonymous_uploads_per_ip_per_day as i64,
+            )
+            .await?;
+        if !allowed {
+            return Err(AppError::rate_limited(
+                "该网络今日的匿名压缩次数已用完，登录后可继续使用",
+            ));
+        }
+    }
+    let task = state.compression.submit(&subject, data, &filename).await?;
+    Ok(Json(ApiResponse::success(UploadResponse {
+        task_id: task.id.to_string(),
+    })))
 }
 
 #[utoipa::path(
@@ -54,111 +82,66 @@ pub async fn upload_image(
     path = "/v1/images/compress/{task_id}",
     tag = "图片压缩",
     params(
-        ("task_id" = String, Path, description = "任务ID")
+        ("task_id" = String, Path, description = "任务 ID"),
+        StatusQuery,
     ),
     responses(
-        (status = 200, description = "获取成功", body = ApiResponse<TaskStatusResponseSchema>),
+        (status = 200, description = "任务状态；带 wait 时最多等待该秒数直到终态", body = ApiResponse<TaskStatusView>),
         (status = 404, description = "任务不存在", body = ApiResponseError),
-    )
+    ),
+    security(("api_key" = []))
 )]
 pub async fn get_task_status(
     State(state): State<Arc<AppState>>,
     Path(task_id): Path<String>,
-) -> Result<Json<ApiResponse<TaskStatusResponseSchema>>, AppError> {
-    let status = state
-        .compression_service
-        .get_task_status(&task_id)
+    Query(query): Query<StatusQuery>,
+) -> Result<Json<ApiResponse<TaskStatusView>>, AppError> {
+    let task_id = Uuid::parse_str(&task_id).map_err(|_| AppError::not_found("任务不存在"))?;
+    let wait = query
+        .wait
+        .unwrap_or(0)
+        .min(state.config.limits.status_wait_max_secs);
+    let view = state
+        .compression
+        .status(task_id, Duration::from_secs(wait))
         .await?;
-    
-    let response = TaskStatusResponseSchema {
-        task_id: status.task_id,
-        status: status.status,
-        progress: status.progress,
-        original_size: status.original_size,
-        compressed_size: status.compressed_size,
-        compressed_url: status.compressed_url,
-        error_msg: status.error_msg,
-        created_at: status.created_at,
-        completed_at: status.completed_at,
-        queue_position: status.queue_position,
-    };
-    
-    Ok(Json(ApiResponse::success(response)))
+    Ok(Json(ApiResponse::success(view)))
 }
 
-async fn parse_multipart(mut multipart: Multipart) -> Result<(Vec<u8>, String), AppError> {
-    let mut file_data: Option<Vec<u8>> = None;
+fn multipart_error(err: axum::extract::multipart::MultipartError, max_size: u64) -> AppError {
+    let text = err.to_string().to_lowercase();
+    let size_related = ["limit", "too large", "payload too large", "413", "length"]
+        .iter()
+        .any(|needle| text.contains(needle));
+    if size_related {
+        AppError::file_too_large(0, max_size)
+    } else {
+        AppError::validation(format!("解析表单数据失败: {}", err))
+    }
+}
+
+async fn parse_multipart(
+    mut multipart: Multipart,
+    max_size: u64,
+) -> Result<(Bytes, String), AppError> {
+    let mut file_data: Option<Bytes> = None;
     let mut filename: Option<String> = None;
 
-    while let Some(field) = multipart.next_field().await
-        .map_err(|e| {
-            let error_msg = e.to_string().to_lowercase();
-            let max_size = crate::config::AppConfig::get().server.max_upload_size;
-            if error_msg.contains("limit") || error_msg.contains("too large") || error_msg.contains("size") 
-                || error_msg.contains("payload too large") || error_msg.contains("413")
-                || error_msg.contains("parsing multipart") || error_msg.contains("body limit exceeded")
-                || error_msg.contains("parsing `multipart/form-data`")
-                || (error_msg.contains("parsing") && error_msg.contains("multipart"))
-                || (error_msg.contains("parsing") && error_msg.contains("form-data")) {
-                AppError::file_too_large(0, max_size)
-            } else {
-                AppError::validation(format!("解析表单数据失败: {}", e))
-            }
-        })?
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| multipart_error(e, max_size))?
     {
-        let name = field.name().unwrap_or("");
-        if name == "file" {
+        if field.name() == Some("file") {
             filename = field.file_name().map(|s| s.to_string());
-            let data = field.bytes().await
-                .map_err(|e| {
-                    let error_msg = e.to_string().to_lowercase();
-                    let max_size = crate::config::AppConfig::get().server.max_upload_size;
-                    if error_msg.contains("limit") || error_msg.contains("too large") || error_msg.contains("size")
-                        || error_msg.contains("payload too large") || error_msg.contains("413")
-                        || error_msg.contains("parsing multipart") || error_msg.contains("body limit exceeded")
-                        || error_msg.contains("parsing `multipart/form-data`")
-                        || (error_msg.contains("parsing") && error_msg.contains("multipart"))
-                        || (error_msg.contains("parsing") && error_msg.contains("form-data")) {
-                        AppError::file_too_large(0, max_size)
-                    } else {
-                        AppError::validation(format!("读取文件数据失败: {}", e))
-                    }
-                })?;
-            file_data = Some(data.to_vec());
+            let data = field
+                .bytes()
+                .await
+                .map_err(|e| multipart_error(e, max_size))?;
+            file_data = Some(data);
         }
     }
 
-    let file_data = file_data.ok_or_else(|| AppError::validation("文件不能为空".to_string()))?;
-    let filename = filename.unwrap_or_else(|| "image".to_string());
-
-    Ok((file_data, filename))
-}
-
-#[derive(serde::Serialize, ToSchema)]
-pub struct UploadResponse {
-    #[schema(example = "550e8400-e29b-41d4-a716-446655440000")]
-    pub task_id: String,
-}
-
-#[derive(serde::Serialize, ToSchema)]
-pub struct TaskStatusResponseSchema {
-    #[schema(example = "550e8400-e29b-41d4-a716-446655440000")]
-    pub task_id: String,
-    #[schema(example = "completed")]
-    pub status: String,
-    #[schema(example = 100)]
-    pub progress: u8,
-    #[schema(example = 1024000)]
-    pub original_size: u64,
-    #[schema(example = 512000)]
-    pub compressed_size: Option<u64>,
-    #[schema(example = "/v1/images/download/compressed.png")]
-    pub compressed_url: Option<String>,
-    pub error_msg: Option<String>,
-    #[schema(example = 1691234567)]
-    pub created_at: u64,
-    #[schema(example = 1691234600)]
-    pub completed_at: Option<u64>,
-    #[schema(example = 5)]
-    pub queue_position: Option<usize>,
+    let file_data = file_data.ok_or_else(|| AppError::validation("文件不能为空"))?;
+    Ok((file_data, filename.unwrap_or_else(|| "image".to_string())))
 }

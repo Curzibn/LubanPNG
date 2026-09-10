@@ -1,12 +1,12 @@
 use crate::config::PngSmartConfig;
 use anyhow::Result;
-use image::{DynamicImage, ColorType};
+use image::{ColorType, DynamicImage};
 
 pub fn should_use_imagequant(img: &DynamicImage, config: &PngSmartConfig) -> bool {
     if !config.enabled {
         return false;
     }
-    
+
     match img.color() {
         ColorType::L8 | ColorType::La8 | ColorType::Rgb8 | ColorType::Rgba8 => true,
         ColorType::L16 | ColorType::La16 | ColorType::Rgb16 | ColorType::Rgba16 => true,
@@ -17,13 +17,13 @@ pub fn should_use_imagequant(img: &DynamicImage, config: &PngSmartConfig) -> boo
 
 pub fn optimize_with_oxipng(png_data: &[u8], level: u8) -> Result<Vec<u8>> {
     use oxipng::{optimize_from_memory, Options, StripChunks};
-    
+
     let mut options = Options::from_preset(level.min(6) as u8);
     options.strip = StripChunks::Safe;
-    
+
     let optimized = optimize_from_memory(png_data, &options)
         .map_err(|e| anyhow::anyhow!("OxiPNG优化失败: {}", e))?;
-    
+
     Ok(optimized)
 }
 
@@ -51,14 +51,10 @@ pub fn compress_png_smart(
     Ok(data_to_optimize)
 }
 
-fn try_imagequant(
-    img: &DynamicImage,
-    min_quality: u8,
-    max_quality: u8,
-) -> Result<Vec<u8>> {
-    use image::{ImageFormat, DynamicImage};
+fn try_imagequant(img: &DynamicImage, min_quality: u8, max_quality: u8) -> Result<Vec<u8>> {
+    use image::{DynamicImage, ImageFormat};
     use std::io::Cursor;
-    
+
     let rgba = img.to_rgba8();
     let raw_data = rgba.as_raw();
     let pixels: Vec<imagequant::RGBA> = raw_data
@@ -70,28 +66,31 @@ fn try_imagequant(
             a: chunk[3],
         })
         .collect();
-    
+
     let mut liq = imagequant::new();
     liq.set_quality(min_quality, max_quality)
         .map_err(|e| anyhow::anyhow!("设置质量失败: {}", e))?;
-    
-    let mut img_liq = liq.new_image(
-        pixels.into_boxed_slice(),
-        rgba.width() as usize,
-        rgba.height() as usize,
-        0.0,
-    )
-    .map_err(|e| anyhow::anyhow!("创建图像失败: {}", e))?;
-    
-    let mut res = liq.quantize(&mut img_liq)
+
+    let mut img_liq = liq
+        .new_image(
+            pixels.into_boxed_slice(),
+            rgba.width() as usize,
+            rgba.height() as usize,
+            0.0,
+        )
+        .map_err(|e| anyhow::anyhow!("创建图像失败: {}", e))?;
+
+    let mut res = liq
+        .quantize(&mut img_liq)
         .map_err(|e| anyhow::anyhow!("量化失败: {}", e))?;
-    
+
     res.set_dithering_level(1.0)
         .map_err(|e| anyhow::anyhow!("设置抖动失败: {}", e))?;
-    
-    let (palette, pixels) = res.remapped(&mut img_liq)
+
+    let (palette, pixels) = res
+        .remapped(&mut img_liq)
         .map_err(|e| anyhow::anyhow!("重映射失败: {}", e))?;
-    
+
     let mut indexed_data = Vec::new();
     for pixel in pixels.iter() {
         let color = palette[*pixel as usize];
@@ -100,17 +99,15 @@ fn try_imagequant(
         indexed_data.push(color.b);
         indexed_data.push(color.a);
     }
-    
+
     let quantized_img = DynamicImage::ImageRgba8(
-        image::RgbaImage::from_raw(
-            rgba.width(),
-            rgba.height(),
-            indexed_data,
-        ).ok_or_else(|| anyhow::anyhow!("创建图像失败"))?
+        image::RgbaImage::from_raw(rgba.width(), rgba.height(), indexed_data)
+            .ok_or_else(|| anyhow::anyhow!("创建图像失败"))?,
     );
-    
+
     let mut data = Vec::new();
-    quantized_img.write_to(&mut Cursor::new(&mut data), ImageFormat::Png)
+    quantized_img
+        .write_to(&mut Cursor::new(&mut data), ImageFormat::Png)
         .map_err(|e| anyhow::anyhow!("PNG编码失败: {}", e))?;
 
     Ok(data)
@@ -128,12 +125,7 @@ mod tests {
                 img.put_pixel(
                     x,
                     y,
-                    image::Rgba([
-                        (x % 256) as u8,
-                        (y % 256) as u8,
-                        ((x + y) % 256) as u8,
-                        255,
-                    ]),
+                    image::Rgba([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8, 255]),
                 );
             }
         }
@@ -144,18 +136,14 @@ mod tests {
     fn smart_png_compresses_and_keeps_dimensions() {
         let img = gradient_image(512, 512);
         let mut original = Vec::new();
-        img.write_to(&mut std::io::Cursor::new(&mut original), image::ImageFormat::Png)
-            .unwrap();
-
-        let config = crate::config::PngSmartConfig::default();
-        let compressed = compress_png_smart(
-            img,
-            original.clone(),
-            &config,
-            70,
-            100,
+        img.write_to(
+            &mut std::io::Cursor::new(&mut original),
+            image::ImageFormat::Png,
         )
         .unwrap();
+
+        let config = crate::config::PngSmartConfig::default();
+        let compressed = compress_png_smart(img, original.clone(), &config, 70, 100).unwrap();
 
         let decoded = image::load_from_memory(&compressed).unwrap();
         assert_eq!(decoded.width(), 512);
@@ -172,8 +160,11 @@ mod tests {
     fn oxipng_alone_shrinks_losslessly() {
         let img = gradient_image(256, 256);
         let mut original = Vec::new();
-        img.write_to(&mut std::io::Cursor::new(&mut original), image::ImageFormat::Png)
-            .unwrap();
+        img.write_to(
+            &mut std::io::Cursor::new(&mut original),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
 
         let optimized = optimize_with_oxipng(&original, 4).unwrap();
         assert!(optimized.len() < original.len());
@@ -187,8 +178,11 @@ mod tests {
     fn imagequant_disabled_falls_back_to_oxipng() {
         let img = gradient_image(128, 128);
         let mut original = Vec::new();
-        img.write_to(&mut std::io::Cursor::new(&mut original), image::ImageFormat::Png)
-            .unwrap();
+        img.write_to(
+            &mut std::io::Cursor::new(&mut original),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
 
         let config = crate::config::PngSmartConfig {
             enabled: false,

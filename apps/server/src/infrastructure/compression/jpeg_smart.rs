@@ -3,14 +3,9 @@ use anyhow::Result;
 use img_parts::{jpeg::Jpeg, Bytes};
 
 const STANDARD_LUMINANCE_QT: [u8; 64] = [
-    16, 11, 10, 16, 24, 40, 51, 61,
-    12, 12, 14, 19, 26, 58, 60, 55,
-    14, 13, 16, 24, 40, 57, 69, 56,
-    14, 17, 22, 29, 51, 87, 80, 62,
-    18, 22, 37, 56, 68, 109, 103, 77,
-    24, 35, 55, 64, 81, 104, 113, 92,
-    49, 64, 78, 87, 103, 121, 120, 101,
-    72, 92, 95, 98, 112, 100, 103, 99,
+    16, 11, 10, 16, 24, 40, 51, 61, 12, 12, 14, 19, 26, 58, 60, 55, 14, 13, 16, 24, 40, 57, 69, 56,
+    14, 17, 22, 29, 51, 87, 80, 62, 18, 22, 37, 56, 68, 109, 103, 77, 24, 35, 55, 64, 81, 104, 113,
+    92, 49, 64, 78, 87, 103, 121, 120, 101, 72, 92, 95, 98, 112, 100, 103, 99,
 ];
 
 fn estimate_quality_from_qt(qt: &[u8; 64]) -> u8 {
@@ -40,7 +35,7 @@ pub fn estimate_jpeg_quality(jpeg_data: &[u8]) -> Result<Option<u8>> {
         Ok(jpeg) => jpeg,
         Err(_) => return Ok(None),
     };
-    
+
     const DQT_MARKER: u8 = 0xDB;
     let segments = jpeg.segments();
     for segment in segments.iter() {
@@ -49,7 +44,7 @@ pub fn estimate_jpeg_quality(jpeg_data: &[u8]) -> Result<Option<u8>> {
             if contents.len() >= 65 {
                 let precision = (contents[0] >> 4) & 0x0F;
                 let table_id = contents[0] & 0x0F;
-                
+
                 if precision == 0 && table_id == 0 {
                     let qt_bytes = &contents[1..65];
                     if qt_bytes.len() == 64 {
@@ -62,7 +57,7 @@ pub fn estimate_jpeg_quality(jpeg_data: &[u8]) -> Result<Option<u8>> {
             }
         }
     }
-    
+
     Ok(None)
 }
 
@@ -94,7 +89,9 @@ pub fn decide_compression_strategy(
                 }
             } else if quality >= config.safe_compress_threshold {
                 let target_quality = if config.adaptive_quality {
-                    (quality as f32 * 0.9).max(min_quality as f32).min(max_quality as f32) as u8
+                    (quality as f32 * 0.9)
+                        .max(min_quality as f32)
+                        .min(max_quality as f32) as u8
                 } else {
                     ((min_quality + max_quality) / 2) as u8
                 };
@@ -104,7 +101,9 @@ pub fn decide_compression_strategy(
                 }
             } else {
                 let target_quality = if config.adaptive_quality {
-                    (quality as f32 * 0.85).max(min_quality as f32).min(max_quality as f32) as u8
+                    (quality as f32 * 0.85)
+                        .max(min_quality as f32)
+                        .min(max_quality as f32) as u8
                 } else {
                     ((min_quality + max_quality) / 2) as u8
                 };
@@ -124,10 +123,7 @@ pub fn decide_compression_strategy(
     }
 }
 
-pub fn calculate_ssim(
-    original: &image::RgbImage,
-    compressed: &image::RgbImage,
-) -> Result<f64> {
+pub fn calculate_ssim(original: &image::RgbImage, compressed: &image::RgbImage) -> Result<f64> {
     use image_compare::rgb_hybrid_compare;
 
     if original.width() != compressed.width() || original.height() != compressed.height() {
@@ -215,7 +211,11 @@ mod tests {
     fn ssim_identical_images_score_one() {
         let img = photo_like_image(64, 64).to_rgb8();
         let score = calculate_ssim(&img, &img).unwrap();
-        assert!(score > 0.999, "identical images should score ~1.0, got {}", score);
+        assert!(
+            score > 0.999,
+            "identical images should score ~1.0, got {}",
+            score
+        );
     }
 
     #[test]
@@ -226,6 +226,10 @@ mod tests {
             pixel.0 = pixel.0.map(|c| c.saturating_sub(40));
         }
         let score = calculate_ssim(&original, &degraded).unwrap();
-        assert!(score < 0.95, "shifted image should score below 0.95, got {}", score);
+        assert!(
+            score < 0.95,
+            "shifted image should score below 0.95, got {}",
+            score
+        );
     }
 }
