@@ -245,6 +245,43 @@ impl TestApp {
         .await
     }
 
+    async fn upload_with_len(
+        &self,
+        filename: &str,
+        content: &[u8],
+        bearer: Option<&str>,
+    ) -> Reply {
+        let (content_type, bytes) = multipart_raw("file", filename, content);
+        let declared = bytes.len();
+        let mut builder = Request::builder()
+            .method(Method::POST)
+            .uri("/v1/images/compress")
+            .header("x-forwarded-for", &self.client_ip)
+            .header("x-requested-with", "LubanPNG")
+            .header(header::CONTENT_TYPE, content_type)
+            .header(header::CONTENT_LENGTH, declared);
+        if let Some(token) = bearer {
+            builder = builder.header(header::AUTHORIZATION, format!("Bearer {}", token));
+        }
+        let response = self
+            .router
+            .clone()
+            .oneshot(builder.body(Body::from(bytes)).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let headers = response.headers().clone();
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .to_vec();
+        Reply {
+            status,
+            headers,
+            body,
+        }
+    }
+
     async fn upload_with_ok(
         &self,
         filename: &str,
@@ -336,7 +373,7 @@ fn gradient_jpeg(w: u32, h: u32, quality: u8) -> Vec<u8> {
     buf
 }
 
-fn multipart_body(field: &str, filename: &str, content: &[u8]) -> (String, Body) {
+fn multipart_raw(field: &str, filename: &str, content: &[u8]) -> (String, Vec<u8>) {
     let boundary = "----LubanPNGTestBoundary";
     let head = format!(
         "--{}\r\nContent-Disposition: form-data; name=\"{}\"; filename=\"{}\"\r\nContent-Type: application/octet-stream\r\n\r\n",
@@ -347,8 +384,13 @@ fn multipart_body(field: &str, filename: &str, content: &[u8]) -> (String, Body)
     body.extend_from_slice(format!("\r\n--{}--\r\n", boundary).as_bytes());
     (
         format!("multipart/form-data; boundary={}", boundary),
-        Body::from(body),
+        body,
     )
+}
+
+fn multipart_body(field: &str, filename: &str, content: &[u8]) -> (String, Body) {
+    let (content_type, bytes) = multipart_raw(field, filename, content);
+    (content_type, Body::from(bytes))
 }
 
 fn multipart_with_fields(
@@ -859,6 +901,35 @@ fn missing_file_field_returns_400() {
             )
             .await;
         assert_eq!(reply.status, StatusCode::BAD_REQUEST);
+    });
+}
+
+#[test]
+fn plan_limit_rejection_reports_the_plan_limit_not_the_body_limit() {
+    run(async {
+        let app = test_app().await;
+        let oversized = vec![0u8; 6 * 1024 * 1024];
+        let reply = app.upload("big.png", &oversized, None).await;
+        assert_eq!(reply.status, StatusCode::PAYLOAD_TOO_LARGE);
+        let body = reply.json();
+        assert_eq!(body["code"], 1004);
+        let msg = body["msg"].as_str().unwrap();
+        assert!(msg.contains("5.00 MB"), "unexpected message: {msg}");
+        assert!(!msg.contains("50.00 MB"), "unexpected message: {msg}");
+    });
+}
+
+#[test]
+fn body_layer_rejection_reports_the_server_body_limit() {
+    run(async {
+        let app = test_app().await;
+        let oversized = vec![0u8; 52 * 1024 * 1024];
+        let reply = app.upload_with_len("huge.png", &oversized, None).await;
+        assert_eq!(reply.status, StatusCode::PAYLOAD_TOO_LARGE);
+        let body = reply.json();
+        assert_eq!(body["code"], 1004);
+        let msg = body["msg"].as_str().unwrap();
+        assert!(msg.contains("50.00 MB"), "unexpected message: {msg}");
     });
 }
 

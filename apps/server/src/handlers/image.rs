@@ -122,11 +122,7 @@ pub async fn get_task_status(
 }
 
 fn multipart_error(err: axum::extract::multipart::MultipartError, max_size: u64) -> AppError {
-    let text = err.to_string().to_lowercase();
-    let size_related = ["limit", "too large", "payload too large", "413", "length"]
-        .iter()
-        .any(|needle| text.contains(needle));
-    if size_related {
+    if err.status() == axum::http::StatusCode::PAYLOAD_TOO_LARGE {
         AppError::file_too_large(0, max_size)
     } else {
         AppError::validation(format!("解析表单数据失败: {}", err))

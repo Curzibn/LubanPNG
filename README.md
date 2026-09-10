@@ -63,7 +63,7 @@ curl "https://lubanpng.wizthink.cn/v1/images/compress/<task_id>?wait=30" \
 ```
 
 ```bash
-curl -o photo.min.jpg "https://lubanpng.wizthink.cn/v1/images/download/compressed_<task_id>.jpg"
+curl -o photo.min.jpg "https://lubanpng.wizthink.cn/v1/images/download/<task_id>.jpg"
 ```
 
 端点、错误码与完整 OpenAPI 参考见 [开发者文档](https://lubanpng.wizthink.cn/developers) 与 https://lubanpng.wizthink.cn/swagger-ui。

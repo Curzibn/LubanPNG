@@ -155,7 +155,7 @@ const statusSample = (origin: string) =>
     '{ "code": 0, "data": { "status": "completed",',
     '    "original_size": 2516582, "compressed_size": 933241,',
     '    "output_format": "jpeg", "quota_units": 1,',
-    '    "compressed_url": "/v1/images/download/compressed_550e8400-….jpg" } }',
+    '    "compressed_url": "/v1/images/download/550e8400-….jpg" } }',
   ].join("\n")
 
 const convertSample = (origin: string) =>
@@ -181,7 +181,7 @@ const formatRows = [
 ]
 
 const downloadSample = (origin: string) =>
-  `curl -o photo.min.jpg "${origin}/v1/images/download/compressed_550e8400-….jpg"`
+  `curl -o photo.min.jpg "${origin}/v1/images/download/550e8400-….jpg"`
 
 const quotaHeadersSample = ["X-Quota-Limit: 50", "X-Quota-Remaining: 46", "X-Quota-Reset: 2026-10-01T00:00:00Z"].join("\n")
 
