@@ -64,7 +64,14 @@ describe("parseArgv", () => {
     expect(() => parseArgv(["compress", "a.png", "--in-place", "--out", "./d"])).toThrow(/不能同时使用/)
     expect(() => parseArgv(["compress", "a.png", "--concurrency", "0"])).toThrow(/正整数/)
     expect(() => parseArgv(["compress", "a.png", "--concurrency", "many"])).toThrow(/正整数/)
+    expect(() => parseArgv(["compress", "a.png", "--concurrency", "17"])).toThrow(/最大 16/)
     expect(() => parseArgv(["compress", "a.png", "--out"])).toThrow(/缺少值/)
+  })
+
+  it("accepts the concurrency ceiling", () => {
+    const parsed = parseArgv(["compress", "a.png", "--concurrency", "16"])
+    expect(parsed.command).toBe("compress")
+    if (parsed.command === "compress") expect(parsed.concurrency).toBe(16)
   })
 
   it("rejects trailing arguments on single-argument commands", () => {

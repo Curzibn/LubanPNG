@@ -19,6 +19,7 @@ export type ParsedCommand =
   | { command: "version" }
 
 export const DEFAULT_CONCURRENCY = 4
+export const MAX_CONCURRENCY = 16
 
 const STRING_OPTIONS = new Set(["--api-base", "--out", "--concurrency"])
 const BOOLEAN_OPTIONS = new Set(["--in-place", "--recursive", "--help", "-h", "--version", "-v"])
@@ -27,7 +28,11 @@ const COMMANDS = new Set<Command>(["login", "logout", "compress", "usage"])
 
 const readConcurrency = (raw: string): number => {
   if (!/^[1-9]\d*$/.test(raw)) throw new UsageError(`--concurrency 必须是正整数，收到：${raw}`)
-  return Number(raw)
+  const value = Number(raw)
+  if (value > MAX_CONCURRENCY) {
+    throw new UsageError(`--concurrency 最大 ${MAX_CONCURRENCY}，收到：${raw}`)
+  }
+  return value
 }
 
 export const parseArgv = (argv: string[]): ParsedCommand => {

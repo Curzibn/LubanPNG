@@ -23,7 +23,7 @@ export const HELP = [
   "  --out <dir>          输出目录，保持输入目录结构",
   "  --in-place           覆盖原文件",
   "  --recursive          递归处理目录",
-  "  --concurrency <n>    并发数（默认 4）",
+  "  --concurrency <n>    并发数（默认 4，最大 16）",
   "",
   "环境变量：",
   `  ${API_KEY_ENV}     API Key（优先于本机配置）`,
