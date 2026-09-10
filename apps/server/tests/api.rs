@@ -670,3 +670,293 @@ fn missing_file_field_returns_400() {
         assert_eq!(reply.status, StatusCode::BAD_REQUEST);
     });
 }
+
+fn device_id(app: &TestApp) -> uuid::Uuid {
+    let jar = app.cookies.lock().unwrap();
+    let raw = jar.get("lp_device").expect("device cookie");
+    let id = raw.split('.').next().unwrap();
+    uuid::Uuid::parse_str(id).unwrap()
+}
+
+#[test]
+fn visit_events_record_device_and_account_paths() {
+    run(async {
+        let app = test_app().await;
+        app.get("/v1/me").await;
+        let device = device_id(&app);
+
+        let device_reply = app
+            .post_json(
+                "/v1/events/visit",
+                serde_json::json!({
+                    "path": "/pricing",
+                    "referrer_host": "www.v2ex.com",
+                    "utm_source": "v2ex",
+                    "utm_medium": "post",
+                    "utm_campaign": "cli-launch"
+                }),
+            )
+            .await;
+        assert_eq!(device_reply.status, StatusCode::OK);
+        assert_eq!(device_reply.json()["code"], 0);
+
+        let email = login(&app).await;
+        let account_reply = app
+            .post_json(
+                "/v1/events/visit",
+                serde_json::json!({ "path": "/dashboard" }),
+            )
+            .await;
+        assert_eq!(account_reply.status, StatusCode::OK);
+
+        let pool = db::connect(&test_config().database).await.unwrap();
+        let device_count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM visits WHERE subject_type = 'device' AND subject_id = $1",
+        )
+        .bind(device)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(device_count, 1);
+        let (referrer, source): (Option<String>, Option<String>) = sqlx::query_as(
+            "SELECT referrer_host, utm_source FROM visits
+             WHERE subject_type = 'device' AND subject_id = $1",
+        )
+        .bind(device)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(referrer.as_deref(), Some("www.v2ex.com"));
+        assert_eq!(source.as_deref(), Some("v2ex"));
+
+        let account_count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM visits v JOIN accounts a ON a.id = v.subject_id
+             WHERE v.subject_type = 'account' AND a.email = $1",
+        )
+        .bind(&email)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(account_count, 1);
+    });
+}
+
+#[test]
+fn verify_records_first_touch_signup_source_once() {
+    run(async {
+        let app = test_app().await;
+        app.get("/v1/me").await;
+        let device = device_id(&app);
+
+        let first = app
+            .post_json(
+                "/v1/events/visit",
+                serde_json::json!({
+                    "path": "/",
+                    "referrer_host": "juejin.cn",
+                    "utm_source": "juejin",
+                    "utm_medium": "article",
+                    "utm_campaign": "launch"
+                }),
+            )
+            .await;
+        assert_eq!(first.status, StatusCode::OK);
+        let second = app
+            .post_json(
+                "/v1/events/visit",
+                serde_json::json!({
+                    "path": "/pricing",
+                    "referrer_host": "other.example",
+                    "utm_source": "other"
+                }),
+            )
+            .await;
+        assert_eq!(second.status, StatusCode::OK);
+
+        let email = login(&app).await;
+        let pool = db::connect(&test_config().database).await.unwrap();
+        let row: (
+            Option<uuid::Uuid>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        ) = sqlx::query_as(
+            "SELECT signup_device_id, signup_referrer_host, signup_utm_source,
+                    signup_utm_medium, signup_utm_campaign
+             FROM accounts WHERE email = $1",
+        )
+        .bind(&email)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.0, Some(device));
+        assert_eq!(row.1.as_deref(), Some("juejin.cn"));
+        assert_eq!(row.2.as_deref(), Some("juejin"));
+        assert_eq!(row.3.as_deref(), Some("article"));
+        assert_eq!(row.4.as_deref(), Some("launch"));
+        let ip: Option<String> =
+            sqlx::query_scalar("SELECT host(signup_ip) FROM accounts WHERE email = $1")
+                .bind(&email)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(ip.is_some());
+
+        let logout = app
+            .post_json("/v1/auth/logout", serde_json::json!({}))
+            .await;
+        assert_eq!(logout.status, StatusCode::OK);
+        app.post_json(
+            "/v1/events/visit",
+            serde_json::json!({
+                "path": "/later",
+                "referrer_host": "later.example",
+                "utm_source": "later"
+            }),
+        )
+        .await;
+        app.post_json("/v1/auth/otp", serde_json::json!({ "email": email }))
+            .await;
+        let code = app.mailer.last_code_for(&email);
+        let again = app
+            .post_json(
+                "/v1/auth/verify",
+                serde_json::json!({ "email": email, "code": code }),
+            )
+            .await;
+        assert_eq!(again.status, StatusCode::OK);
+        assert_eq!(again.json()["data"]["created"], false);
+        let after: (Option<String>, Option<String>) = sqlx::query_as(
+            "SELECT signup_referrer_host, signup_utm_source FROM accounts WHERE email = $1",
+        )
+        .bind(&email)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(after.0.as_deref(), Some("juejin.cn"));
+        assert_eq!(after.1.as_deref(), Some("juejin"));
+    });
+}
+
+#[test]
+fn waitlist_join_requires_account_and_is_idempotent() {
+    run(async {
+        let app = test_app().await;
+        app.get("/v1/me").await;
+        let anonymous = app
+            .post_json("/v1/me/waitlist", serde_json::json!({ "plan_id": "pro" }))
+            .await;
+        assert_eq!(anonymous.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(anonymous.json()["code"], 4001);
+
+        let email = login(&app).await;
+        let first = app
+            .post_json("/v1/me/waitlist", serde_json::json!({ "plan_id": "pro" }))
+            .await;
+        assert_eq!(first.status, StatusCode::OK);
+        assert_eq!(first.json()["data"]["plan_id"], "pro");
+        let created_at = first.json()["data"]["created_at"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let second = app
+            .post_json("/v1/me/waitlist", serde_json::json!({ "plan_id": "pro" }))
+            .await;
+        assert_eq!(second.status, StatusCode::OK);
+        assert_eq!(second.json()["data"]["created_at"], created_at);
+
+        let pool = db::connect(&test_config().database).await.unwrap();
+        let count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM waitlist_signups w JOIN accounts a ON a.id = w.account_id
+             WHERE a.email = $1 AND w.plan_id = 'pro'",
+        )
+        .bind(&email)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count, 1);
+    });
+}
+
+#[test]
+fn analytics_views_are_queryable_and_consistent() {
+    run(async {
+        let app = test_app().await;
+        app.get("/v1/me").await;
+        let email = login(&app).await;
+        let png = gradient_png(64, 64);
+        let task_id = app.upload_ok("metric.png", &png, None).await;
+        let data = app.wait_final(&task_id).await;
+        assert_eq!(data["status"], "completed", "{}", data);
+        app.post_json(
+            "/v1/events/visit",
+            serde_json::json!({ "path": "/", "referrer_host": "example.com" }),
+        )
+        .await;
+
+        let pool = db::connect(&test_config().database).await.unwrap();
+        let applied: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM _sqlx_migrations WHERE version = 2 AND success",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(applied, 1);
+
+        let view_counts: (i64, i64, i64, i64, i64) = sqlx::query_as(
+            "SELECT (SELECT count(*) FROM analytics.daily_visits),
+                    (SELECT count(*) FROM analytics.daily_funnel),
+                    (SELECT count(*) FROM analytics.daily_source_tasks),
+                    (SELECT count(*) FROM analytics.cohort_retention),
+                    (SELECT count(*) FROM analytics.account_acquisition)",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(
+            view_counts.0 >= 1
+                && view_counts.1 >= 1
+                && view_counts.2 >= 1
+                && view_counts.3 >= 1
+                && view_counts.4 >= 1
+        );
+
+        let signup_mismatch: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM analytics.daily_funnel f
+             WHERE f.signups <> (
+                 SELECT count(*) FROM accounts a
+                 WHERE date(a.created_at AT TIME ZONE 'Asia/Shanghai') = f.day
+             )",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(signup_mismatch, 0);
+
+        let totals: (i64, i64) = sqlx::query_as(
+            "SELECT COALESCE(sum(created), 0)::bigint, COALESCE(sum(completed), 0)::bigint
+             FROM analytics.daily_source_tasks",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(
+            totals.1 <= totals.0,
+            "completed {} > created {}",
+            totals.1,
+            totals.0
+        );
+
+        let attributed: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM analytics.account_acquisition
+             WHERE email = $1 AND signup_device_id IS NOT NULL",
+        )
+        .bind(&email)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(attributed, 1);
+    });
+}

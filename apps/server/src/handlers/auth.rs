@@ -1,13 +1,16 @@
 use crate::app::AppState;
+use crate::domain::subject::SubjectKind;
 use crate::error::AppError;
 use crate::handlers::extract::ClientMeta;
 use crate::response::{ApiResponse, ApiResponseError};
+use crate::services::auth::SignupContext;
 use axum::extract::State;
 use axum::http::header::SET_COOKIE;
 use axum::http::HeaderMap;
 use axum::response::{AppendHeaders, IntoResponse, Response};
 use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
 use std::sync::Arc;
 use utoipa::ToSchema;
 
@@ -85,9 +88,26 @@ pub async fn request_otp(
 )]
 pub async fn verify_otp(
     State(state): State<Arc<AppState>>,
+    Extension(subject): Extension<crate::domain::subject::Subject>,
+    Extension(meta): Extension<ClientMeta>,
     Json(body): Json<VerifyRequest>,
 ) -> Result<Response, AppError> {
-    let (token, account, created) = state.auth.verify_code(&body.email, &body.code).await?;
+    let signup = SignupContext {
+        device_id: match subject.kind {
+            SubjectKind::Device => Some(subject.id),
+            SubjectKind::Account => None,
+        },
+        ip: meta
+            .ip
+            .trim()
+            .parse::<IpAddr>()
+            .ok()
+            .map(|ip| ip.to_string()),
+    };
+    let (token, account, created) = state
+        .auth
+        .verify_code(&body.email, &body.code, signup)
+        .await?;
     let response = ApiResponse::success(VerifyResponse {
         email: account.email,
         plan_id: account.plan_id,

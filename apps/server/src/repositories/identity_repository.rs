@@ -94,6 +94,37 @@ impl IdentityRepository {
         Ok(account)
     }
 
+    pub async fn record_signup(
+        &self,
+        account_id: Uuid,
+        device_id: Option<Uuid>,
+        ip: Option<&str>,
+    ) -> AppResult<()> {
+        sqlx::query(
+            "WITH first_visit AS (
+                 SELECT referrer_host, utm_source, utm_medium, utm_campaign
+                 FROM visits
+                 WHERE subject_type = 'device' AND subject_id = $2::uuid
+                 ORDER BY occurred_at, id
+                 LIMIT 1
+             )
+             UPDATE accounts
+             SET signup_device_id = $2,
+                 signup_referrer_host = (SELECT referrer_host FROM first_visit),
+                 signup_utm_source = (SELECT utm_source FROM first_visit),
+                 signup_utm_medium = (SELECT utm_medium FROM first_visit),
+                 signup_utm_campaign = (SELECT utm_campaign FROM first_visit),
+                 signup_ip = $3::text::inet
+             WHERE id = $1 AND signup_device_id IS NULL AND signup_ip IS NULL",
+        )
+        .bind(account_id)
+        .bind(device_id)
+        .bind(ip)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn create_otp(
         &self,
         email: &str,

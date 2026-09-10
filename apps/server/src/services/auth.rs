@@ -31,6 +31,11 @@ pub struct OtpIssued {
     pub resend_after: i64,
 }
 
+pub struct SignupContext {
+    pub device_id: Option<Uuid>,
+    pub ip: Option<String>,
+}
+
 pub struct AuthService {
     identity: Arc<IdentityRepository>,
     rate_limits: Arc<RateLimitRepository>,
@@ -315,6 +320,7 @@ impl AuthService {
         &self,
         raw_email: &str,
         code: &str,
+        signup: SignupContext,
     ) -> AppResult<(String, AccountRow, bool)> {
         let email = normalize_email(raw_email)?;
         let code = code.trim();
@@ -335,6 +341,11 @@ impl AuthService {
         }
         self.identity.consume_otp(otp.id).await?;
         let (account, created) = self.identity.find_or_create_account(&email).await?;
+        if created {
+            self.identity
+                .record_signup(account.id, signup.device_id, signup.ip.as_deref())
+                .await?;
+        }
         let token = random_hex(32);
         self.identity
             .create_session(
