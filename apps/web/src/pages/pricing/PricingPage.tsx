@@ -1,54 +1,61 @@
+import { useState } from "react"
+import { errorMessage, joinWaitlist, type WaitlistPlanId } from "../../api/client.ts"
 import { usePageTitle } from "../../app/usePageTitle.ts"
-import { LinkButton } from "../../components/Button.tsx"
+import { Button, LinkButton } from "../../components/Button.tsx"
 import { Container } from "../../components/Container.tsx"
 import { Eyebrow } from "../../components/Eyebrow.tsx"
 import { CheckIcon } from "../../components/icons.tsx"
+import { Notice } from "../../components/Notice.tsx"
 import { cx } from "../../lib/cx.ts"
+import { useSession } from "../../session/sessionContext.ts"
 
-type PlanCard = {
-  id: string
+type FreePlanCard = {
+  id: "free"
+  waitlist: false
   eyebrow: string
   price: string
-  priceSuffix?: string
   description: string
   features: string[]
-  action: { label: string; to: string; accent: boolean }
-  dark: boolean
-  comingSoon: boolean
 }
+
+type WaitlistPlanCard = {
+  id: WaitlistPlanId
+  waitlist: true
+  dark: boolean
+  eyebrow: string
+  price: string
+  description: string
+  features: string[]
+}
+
+type PlanCard = FreePlanCard | WaitlistPlanCard
 
 const plans: PlanCard[] = [
   {
     id: "free",
+    waitlist: false,
     eyebrow: "免费",
     price: "¥0",
     description: "试一试，或者小量长期使用。",
-    features: ["未登录：每天 5 次", "注册后：每月 50 次", "单张 5 MB 以内", "API Key 1 个，CLI 可用", "产物保留 24 小时"],
-    action: { label: "免费开始", to: "/", accent: false },
-    dark: false,
-    comingSoon: false,
+    features: ["未登录：每天 5 次", "注册后：每月 50 次", "单张 5 MB 以内", "API Key 1 个", "产物保留 24 小时"],
   },
   {
     id: "pro",
-    eyebrow: "Pro",
-    price: "[价格待定]",
-    priceSuffix: "/ 月",
-    description: "给每天都在出图的人。",
-    features: ["每月 [次数待定] 次", "单张 25 MB 以内", "优先队列", "API Key 5 个", "产物保留 7 天"],
-    action: { label: "登录即可加入等待名单", to: "/login", accent: true },
+    waitlist: true,
     dark: true,
-    comingSoon: true,
+    eyebrow: "Pro",
+    price: "规划中",
+    description: "给每天都在出图的人。",
+    features: ["更高的每月额度", "更大的单张文件上限", "更长的产物保留"],
   },
   {
     id: "metered",
-    eyebrow: "按量",
-    price: "[单价待定]",
-    priceSuffix: "/ 次",
-    description: "给接进流水线的 API 与 CLI 用户。",
-    features: ["免费额度用完后按次计费", "预充值，用多少扣多少", "单张 25 MB 以内", "用量随每个响应返回"],
-    action: { label: "查看 API 文档", to: "/developers", accent: false },
+    waitlist: true,
     dark: false,
-    comingSoon: true,
+    eyebrow: "按量",
+    price: "规划中",
+    description: "给接进流水线的 API 用户。",
+    features: ["额度用完后按量延续", "按实际用量计费"],
   },
 ]
 
@@ -58,54 +65,98 @@ const faqs = [
   { question: "网页和 API 分开算吗？", answer: "不分。一个账号一份次数，网页、API、CLI 共用。" },
 ]
 
-const PlanCardView = ({ plan }: { plan: PlanCard }) => (
-  <article
-    aria-labelledby={`plan-${plan.id}`}
-    className={cx(
-      "relative flex flex-col gap-5.5 rounded-card p-6 md:p-8",
-      plan.dark ? "bg-night text-night-text" : "border-thin border-hairline bg-surface text-ink",
-    )}
-  >
-    {plan.comingSoon && (
-      <span
-        className={cx(
-          "absolute right-5 top-5 rounded-pill border-thin px-2.5 py-1 font-mono text-label-xs tracking-badge",
-          plan.dark ? "border-night-muted text-night-muted" : "border-hairline text-ink-secondary",
-        )}
+const WaitlistAction = ({ planId, dark }: { planId: WaitlistPlanId; dark: boolean }) => {
+  const { signedIn } = useSession()
+  const [joined, setJoined] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleJoin = async () => {
+    setSubmitting(true)
+    try {
+      await joinWaitlist(planId)
+      setJoined(true)
+      setError(null)
+    } catch (joinError) {
+      setError(errorMessage(joinError, "加入等待名单失败，请稍后再试"))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (!signedIn) {
+    return (
+      <div className="mt-auto flex w-full flex-col gap-2">
+        <Button variant={dark ? "outlineNight" : "outline"} size="lg" className="w-full" disabled>
+          规划中 · 暂未开放
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-auto flex w-full flex-col gap-2">
+      {error && <Notice tone="error">{error}</Notice>}
+      <Button
+        variant={joined ? (dark ? "outlineNight" : "outline") : "accent"}
+        size="lg"
+        className="w-full"
+        disabled={submitting || joined}
+        onClick={() => void handleJoin()}
       >
-        即将推出
-      </span>
-    )}
-    <div className="flex flex-col gap-2">
-      <Eyebrow tone={plan.dark ? "night" : "paper"}>{plan.eyebrow}</Eyebrow>
-      <p className="flex items-baseline gap-2">
-        <span id={`plan-${plan.id}`} className="font-display text-display-lg leading-none">
-          {plan.price}
-        </span>
-        {plan.priceSuffix && (
-          <span className={cx("text-ui", plan.dark ? "text-night-muted" : "text-ink-secondary")}>{plan.priceSuffix}</span>
-        )}
-      </p>
-      <p className={cx("text-ui", plan.dark ? "text-night-muted" : "text-ink-secondary")}>{plan.description}</p>
+        {joined ? "已在等待名单中" : submitting ? "提交中…" : "加入等待名单"}
+      </Button>
     </div>
-    <ul className="flex flex-col gap-3 text-body leading-normal">
-      {plan.features.map((feature) => (
-        <li key={feature} className="flex gap-2.5">
-          <CheckIcon label="包含" className={cx("mt-0.5 size-4.5 shrink-0", plan.dark ? "text-jade-bright" : "text-jade")} />
-          <span>{feature}</span>
-        </li>
-      ))}
-    </ul>
-    <LinkButton
-      to={plan.action.to}
-      variant={plan.action.accent ? "accent" : "outline"}
-      size="lg"
-      className="mt-auto w-full"
+  )
+}
+
+const PlanCardView = ({ plan }: { plan: PlanCard }) => {
+  const dark = plan.waitlist ? plan.dark : false
+  return (
+    <article
+      aria-labelledby={`plan-${plan.id}`}
+      className={cx(
+        "relative flex flex-col gap-5.5 rounded-card p-6 md:p-8",
+        dark ? "bg-night text-night-text" : "border-thin border-hairline bg-surface text-ink",
+      )}
     >
-      {plan.action.label}
-    </LinkButton>
-  </article>
-)
+      {plan.waitlist && (
+        <span
+          className={cx(
+            "absolute right-5 top-5 rounded-pill border-thin px-2.5 py-1 font-mono text-label-xs tracking-badge",
+            dark ? "border-night-muted text-night-muted" : "border-hairline text-ink-secondary",
+          )}
+        >
+          规划中
+        </span>
+      )}
+      <div className="flex flex-col gap-2">
+        <Eyebrow tone={dark ? "night" : "paper"}>{plan.eyebrow}</Eyebrow>
+        <p className="flex items-baseline gap-2">
+          <span id={`plan-${plan.id}`} className="font-display text-display-lg leading-none">
+            {plan.price}
+          </span>
+        </p>
+        <p className={cx("text-ui", dark ? "text-night-muted" : "text-ink-secondary")}>{plan.description}</p>
+      </div>
+      <ul className="flex flex-col gap-3 text-body leading-normal">
+        {plan.features.map((feature) => (
+          <li key={feature} className="flex gap-2.5">
+            <CheckIcon label="包含" className={cx("mt-0.5 size-4.5 shrink-0", dark ? "text-jade-bright" : "text-jade")} />
+            <span>{feature}</span>
+          </li>
+        ))}
+      </ul>
+      {plan.waitlist ? (
+        <WaitlistAction planId={plan.id} dark={dark} />
+      ) : (
+        <LinkButton to="/" variant="outline" size="lg" className="mt-auto w-full">
+          免费开始
+        </LinkButton>
+      )}
+    </article>
+  )
+}
 
 export const PricingPage = () => {
   usePageTitle("定价")

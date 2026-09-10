@@ -9,10 +9,12 @@ import { LoginPage } from "../pages/login/LoginPage.tsx"
 import { NotFoundPage } from "../pages/NotFoundPage.tsx"
 import { PricingPage } from "../pages/pricing/PricingPage.tsx"
 import { SessionProvider } from "../session/SessionProvider.tsx"
+import { VisitTracker } from "./VisitTracker.tsx"
 
 export const App = () => (
   <BrowserRouter>
     <SessionProvider>
+      <VisitTracker />
       <Routes>
         <Route element={<SiteLayout />}>
           <Route index element={<HomePage />} />

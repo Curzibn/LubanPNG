@@ -184,6 +184,7 @@ const parseEnvelope = <T>(status: number, text: string, read: HeaderReader): Api
 type RequestOptions = {
   json?: unknown
   signal?: AbortSignal
+  keepalive?: boolean
 }
 
 const request = async <T>(method: string, path: string, options: RequestOptions = {}): Promise<ApiResult<T>> => {
@@ -198,6 +199,7 @@ const request = async <T>(method: string, path: string, options: RequestOptions 
       credentials: "include",
       body: options.json === undefined ? null : JSON.stringify(options.json),
       signal: options.signal ?? null,
+      keepalive: options.keepalive ?? false,
     })
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw error
@@ -229,6 +231,26 @@ export const revokeApiKey = async (id: string): Promise<void> => {
 }
 
 export const listTasks = async (): Promise<TaskRecord[]> => (await request<TaskRecord[]>("GET", "/v1/me/tasks")).data
+
+export type WaitlistPlanId = "pro" | "metered"
+
+export const joinWaitlist = async (planId: WaitlistPlanId): Promise<void> => {
+  await request<{ plan_id: string; created_at: string }>("POST", "/v1/me/waitlist", {
+    json: { plan_id: planId },
+  })
+}
+
+export type VisitPayload = {
+  path: string
+  referrer_host: string
+  utm_source: string | null
+  utm_medium: string | null
+  utm_campaign: string | null
+}
+
+export const reportVisit = async (payload: VisitPayload): Promise<void> => {
+  await request<{ ok: boolean }>("POST", "/v1/events/visit", { json: payload, keepalive: true })
+}
 
 export const fetchTask = (taskId: string, waitSeconds: number, signal?: AbortSignal): Promise<ApiResult<CompressTask>> =>
   request<CompressTask>("GET", `/v1/images/compress/${encodeURIComponent(taskId)}?wait=${waitSeconds}`, { signal })

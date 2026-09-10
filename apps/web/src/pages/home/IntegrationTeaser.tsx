@@ -2,6 +2,7 @@ import { LinkButton } from "../../components/Button.tsx"
 import { CodeBlock } from "../../components/CodeBlock.tsx"
 import { Container } from "../../components/Container.tsx"
 import { Eyebrow } from "../../components/Eyebrow.tsx"
+import { CLI_AVAILABLE, CLI_INSTALL_COMMAND, CLI_PENDING_NOTE, CLI_PLATFORMS } from "../../lib/cliRelease.ts"
 
 const curlSample = (origin: string): string =>
   [
@@ -50,10 +51,10 @@ export const IntegrationTeaser = () => {
             {cliSample}
           </CodeBlock>
           <div className="flex flex-col items-start gap-3 text-ui md:flex-row md:items-center md:gap-4">
-            <LinkButton to="/developers#cli" variant="outline" size="sm">
-              安装 CLI
-            </LinkButton>
-            <p className="text-ink-secondary">单文件可执行，macOS / Linux / Windows。</p>
+            <code className="rounded-control border-thin border-hairline bg-panel px-3 py-2 font-mono text-ui text-ink">
+              {CLI_INSTALL_COMMAND}
+            </code>
+            <p className="text-ink-secondary">{CLI_AVAILABLE ? CLI_PLATFORMS : CLI_PENDING_NOTE}</p>
           </div>
         </section>
       </div>

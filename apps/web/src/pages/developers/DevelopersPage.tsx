@@ -4,6 +4,7 @@ import { CodeBlock } from "../../components/CodeBlock.tsx"
 import { Container } from "../../components/Container.tsx"
 import { Eyebrow } from "../../components/Eyebrow.tsx"
 import { ExternalLinkIcon } from "../../components/icons.tsx"
+import { CLI_AVAILABLE, CLI_INSTALL_COMMAND, CLI_PENDING_NOTE, CLI_PLATFORMS } from "../../lib/cliRelease.ts"
 import { Table, Td, Th } from "../../components/Table.tsx"
 import { cx } from "../../lib/cx.ts"
 
@@ -252,7 +253,12 @@ export const DevelopersPage = () => {
           </Section>
 
           <Section id="cli" title="CLI">
-            <Prose>单文件可执行，走同一套 API 与额度。登录一次，Key 存在本机用户配置目录。</Prose>
+            <Prose>
+              走同一套 API 与额度。登录一次，Key 存在本机用户配置目录（macOS / Linux 为 ~/.config/lubanpng，Windows 为
+              %APPDATA%\lubanpng）。
+            </Prose>
+            <CodeBlock label="安装（npm）">{CLI_INSTALL_COMMAND}</CodeBlock>
+            <Prose>{CLI_AVAILABLE ? CLI_PLATFORMS : CLI_PENDING_NOTE}</Prose>
             <CodeBlock label="CLI 示例">{cliSample}</CodeBlock>
             <Table label="CLI 命令">
               <tbody>

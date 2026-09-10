@@ -165,7 +165,7 @@ export const ApiKeysCard = ({ plan }: { plan: Plan }) => {
           {keys !== null && keys.length === 0 && (
             <tr>
               <Td colSpan={5} className="text-ink-secondary">
-                还没有 Key。新建一个，就能在 CLI 和 API 里使用同一份额度。
+                还没有 Key。新建一个，就能在 API 里使用同一份额度；CLI 发布后也共用这一份。
               </Td>
             </tr>
           )}
@@ -193,10 +193,10 @@ export const ApiKeysCard = ({ plan }: { plan: Plan }) => {
       </Table>
       <div className="flex flex-col gap-1.5 text-label leading-relaxed text-ink-secondary">
         <p>
-          Key 只在创建时完整显示一次，之后只能看到前后几位。{plan.name}可用 {plan.max_api_keys} 个 Key，Pro 可到 5 个。
+          Key 只在创建时完整显示一次，之后只能看到前后几位。{plan.name}可用 {plan.max_api_keys} 个 Key。
         </p>
         <p>
-          在终端登录：<span className="font-mono text-ink">lubanpng login</span>
+          CLI 发布后，在终端运行 <span className="font-mono text-ink">lubanpng login</span> 即可复用这一份额度。
         </p>
       </div>
     </section>
