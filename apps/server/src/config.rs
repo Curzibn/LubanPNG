@@ -219,6 +219,8 @@ pub struct LimitsConfig {
     pub anonymous_uploads_per_ip_per_day: u32,
     pub otp_per_email_per_10min: u32,
     pub otp_per_ip_per_hour: u32,
+    pub visit_per_device_per_minute: u32,
+    pub visit_per_ip_per_minute: u32,
     pub status_wait_max_secs: u64,
     pub worker_stale_secs: i64,
 }
@@ -229,6 +231,8 @@ impl Default for LimitsConfig {
             anonymous_uploads_per_ip_per_day: 30,
             otp_per_email_per_10min: 3,
             otp_per_ip_per_hour: 20,
+            visit_per_device_per_minute: 30,
+            visit_per_ip_per_minute: 120,
             status_wait_max_secs: 30,
             worker_stale_secs: 600,
         }

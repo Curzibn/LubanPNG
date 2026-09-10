@@ -101,6 +101,7 @@ pub fn start_workers(state: &Arc<AppState>, worker_count: usize) -> Vec<JoinHand
         state.compression.clone(),
         state.tasks.clone(),
         state.rate_limits.clone(),
+        state.visits.clone(),
         worker_count,
         state.config.limits.worker_stale_secs,
     )

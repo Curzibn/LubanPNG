@@ -867,6 +867,24 @@ fn waitlist_join_requires_account_and_is_idempotent() {
         assert_eq!(second.status, StatusCode::OK);
         assert_eq!(second.json()["data"]["created_at"], created_at);
 
+        let invalid = app
+            .post_json(
+                "/v1/me/waitlist",
+                serde_json::json!({ "plan_id": "enterprise" }),
+            )
+            .await;
+        assert_eq!(invalid.status, StatusCode::BAD_REQUEST);
+        assert_eq!(invalid.json()["code"], 1001);
+
+        let metered = app
+            .post_json(
+                "/v1/me/waitlist",
+                serde_json::json!({ "plan_id": "metered" }),
+            )
+            .await;
+        assert_eq!(metered.status, StatusCode::OK);
+        assert_eq!(metered.json()["data"]["plan_id"], "metered");
+
         let pool = db::connect(&test_config().database).await.unwrap();
         let count: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM waitlist_signups w JOIN accounts a ON a.id = w.account_id
@@ -927,7 +945,8 @@ fn analytics_views_are_queryable_and_consistent() {
             "SELECT count(*) FROM analytics.daily_funnel f
              WHERE f.signups <> (
                  SELECT count(*) FROM accounts a
-                 WHERE date(a.created_at AT TIME ZONE 'Asia/Shanghai') = f.day
+                 WHERE a.signup_device_id IS NOT NULL
+                   AND date(a.created_at AT TIME ZONE 'Asia/Shanghai') = f.day
              )",
         )
         .fetch_one(&pool)
@@ -958,5 +977,179 @@ fn analytics_views_are_queryable_and_consistent() {
         .await
         .unwrap();
         assert_eq!(attributed, 1);
+    });
+}
+
+#[test]
+fn visit_events_are_rate_limited_per_device() {
+    run(async {
+        let app = test_app().await;
+        app.get("/v1/me").await;
+        for index in 0..30 {
+            let reply = app
+                .post_json("/v1/events/visit", serde_json::json!({ "path": "/" }))
+                .await;
+            assert_eq!(reply.status, StatusCode::OK, "request {index} should pass");
+        }
+        let limited = app
+            .post_json("/v1/events/visit", serde_json::json!({ "path": "/" }))
+            .await;
+        assert_eq!(limited.status, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(limited.json()["code"], 4003);
+    });
+}
+
+#[test]
+fn visit_user_agent_is_truncated_to_256() {
+    run(async {
+        let app = test_app().await;
+        app.get("/v1/me").await;
+        let device = device_id(&app);
+        let long_agent = "A".repeat(400);
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/v1/events/visit")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::USER_AGENT, &long_agent)
+            .header("x-forwarded-for", &app.client_ip)
+            .header(header::COOKIE, app.cookie_header().unwrap())
+            .header("x-requested-with", "LubanPNG")
+            .body(Body::from(serde_json::json!({ "path": "/" }).to_string()))
+            .unwrap();
+        let response = app.router.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let pool = db::connect(&test_config().database).await.unwrap();
+        let stored: Option<String> = sqlx::query_scalar(
+            "SELECT user_agent FROM visits
+             WHERE subject_type = 'device' AND subject_id = $1
+             ORDER BY id DESC LIMIT 1",
+        )
+        .bind(device)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(stored.unwrap().chars().count(), 256);
+    });
+}
+
+#[test]
+fn funnel_signups_only_count_device_attributed_accounts() {
+    run(async {
+        let app = test_app().await;
+        app.get("/v1/me").await;
+        let pool = db::connect(&test_config().database).await.unwrap();
+        let legacy_id = uuid::Uuid::new_v4();
+        let legacy_email = format!("legacy-{}@example.com", uuid::Uuid::new_v4().simple());
+        sqlx::query(
+            "INSERT INTO accounts (id, email, plan_id, signup_device_id)
+             VALUES ($1, $2, 'free', NULL)",
+        )
+        .bind(legacy_id)
+        .bind(&legacy_email)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let funnel: i64 = sqlx::query_scalar(
+            "SELECT COALESCE((
+                 SELECT signups FROM analytics.daily_funnel
+                 WHERE day = date(now() AT TIME ZONE 'Asia/Shanghai')
+             ), 0)",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let attributable: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM accounts
+             WHERE signup_device_id IS NOT NULL
+               AND date(created_at AT TIME ZONE 'Asia/Shanghai') = date(now() AT TIME ZONE 'Asia/Shanghai')",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(funnel, attributable);
+        let legacy_present: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM accounts
+             WHERE id = $1 AND signup_device_id IS NULL
+               AND date(created_at AT TIME ZONE 'Asia/Shanghai') = date(now() AT TIME ZONE 'Asia/Shanghai')",
+        )
+        .bind(legacy_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(legacy_present, 1);
+    });
+}
+
+#[test]
+fn visit_retention_cleanup_removes_only_expired_rows() {
+    run(async {
+        let pool = db::connect(&test_config().database).await.unwrap();
+        let repo = lubanpng::repositories::visit_repository::VisitRepository::new(pool.clone());
+        let subject = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO visits (occurred_at, subject_type, subject_id, path)
+             VALUES (now() - interval '200 days', 'device', $1, '/old')",
+        )
+        .bind(subject)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO visits (subject_type, subject_id, path) VALUES ('device', $1, '/new')",
+        )
+        .bind(subject)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let removed = repo.cleanup().await.unwrap();
+        assert!(removed >= 1);
+        let remaining: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM visits WHERE subject_id = $1")
+                .bind(subject)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(remaining, 1);
+    });
+}
+
+#[test]
+fn recompressing_never_grows_the_artifact() {
+    run(async {
+        let app = test_app().await;
+        let png = gradient_png(128, 128);
+        let first_id = app.upload_ok("first.png", &png, None).await;
+        let first = app.wait_final(&first_id).await;
+        assert_eq!(first["status"], "completed", "{}", first);
+        let first_bytes = app
+            .storage
+            .get(&format!("outputs/free/{}.png", first_id))
+            .await
+            .unwrap();
+
+        let second_id = app.upload_ok("second.png", &first_bytes, None).await;
+        let second = app.wait_final(&second_id).await;
+        assert_eq!(second["status"], "completed", "{}", second);
+        let original_size = second["original_size"].as_u64().unwrap();
+        let compressed_size = second["compressed_size"].as_u64().unwrap();
+        assert!(
+            compressed_size <= original_size,
+            "compressed {} exceeded original {}",
+            compressed_size,
+            original_size
+        );
+        let artifact = app
+            .storage
+            .get(&format!("outputs/free/{}.png", second_id))
+            .await
+            .unwrap();
+        if compressed_size == original_size {
+            assert_eq!(artifact, first_bytes);
+        } else {
+            assert_eq!(artifact.len() as u64, compressed_size);
+        }
     });
 }

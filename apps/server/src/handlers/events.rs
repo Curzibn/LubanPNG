@@ -70,6 +70,26 @@ pub async fn record_visit(
     headers: HeaderMap,
     Json(body): Json<VisitRequest>,
 ) -> Result<Json<ApiResponse<OkResponse>>, AppError> {
+    let ip_allowed = state
+        .rate_limits
+        .hit(
+            &format!("visit:ip:{}", meta.ip),
+            60,
+            state.config.limits.visit_per_ip_per_minute as i64,
+        )
+        .await?;
+    let device_allowed = state
+        .rate_limits
+        .hit(
+            &format!("visit:device:{}", subject.id),
+            60,
+            state.config.limits.visit_per_device_per_minute as i64,
+        )
+        .await?;
+    if !ip_allowed || !device_allowed {
+        return Err(AppError::rate_limited("访问上报过于频繁，请稍后再试"));
+    }
+
     let path = clean(&body.path, 512).ok_or_else(|| AppError::validation("path 不能为空"))?;
     let referrer_host = clean(body.referrer_host.as_deref().unwrap_or(""), 255);
     let utm_source = clean(body.utm_source.as_deref().unwrap_or(""), 255);
@@ -78,7 +98,7 @@ pub async fn record_visit(
     let user_agent = headers
         .get(USER_AGENT)
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| clean(value, 512));
+        .and_then(|value| clean(value, 256));
     let ip = parse_ip(&meta.ip);
 
     let input = VisitInput {
@@ -116,6 +136,9 @@ pub async fn join_waitlist(
     }
     let plan_id =
         clean(&body.plan_id, 40).ok_or_else(|| AppError::validation("plan_id 不能为空"))?;
+    if !matches!(plan_id.as_str(), "pro" | "metered") {
+        return Err(AppError::validation("plan_id 仅支持 pro 或 metered"));
+    }
     let row = state.waitlist.upsert(subject.id, &plan_id).await?;
     Ok(Json(ApiResponse::success(WaitlistView {
         plan_id: row.plan_id,

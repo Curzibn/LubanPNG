@@ -271,30 +271,40 @@ impl CompressionService {
         let config = self.config.clone();
         self.tasks.set_progress(task.id, 30).await?;
 
+        let compression_input = input.clone();
         let result = tokio::task::spawn_blocking(move || {
             tokio::runtime::Handle::try_current()
                 .map_err(|_| AppError::compression("无法获取运行时句柄"))?
-                .block_on(strategy.compress(&input, &config))
+                .block_on(strategy.compress(&compression_input, &config))
         })
         .await
         .map_err(|e| AppError::compression(format!("任务执行失败: {}", e)))??;
 
         self.tasks.set_progress(task.id, 70).await?;
         let plan = self.plan_for_task(task).await?;
-        let extension = format_extension(result.format);
-        let output_key = format!("{}/{}{}", plan.output_prefix(), task.id, extension);
+        let original_size = task.original_size.max(0);
         let compressed_size = result.data.len() as i64;
+        let (payload, stored_size, extension) = if compressed_size >= original_size {
+            (input, original_size, format_extension(format))
+        } else {
+            (
+                Bytes::from(result.data),
+                compressed_size,
+                format_extension(result.format),
+            )
+        };
+        let output_key = format!("{}/{}{}", plan.output_prefix(), task.id, extension);
         self.storage
             .put(
                 &output_key,
-                Bytes::from(result.data),
+                payload,
                 content_type_for_extension(extension),
                 Some(&task.original_name),
             )
             .await?;
         let expires_at: DateTime<Utc> = Utc::now() + Duration::hours(plan.retention_hours as i64);
         self.tasks
-            .complete(task.id, compressed_size, &output_key, expires_at)
+            .complete(task.id, stored_size, &output_key, expires_at)
             .await?;
         self.quota
             .settle(

@@ -44,4 +44,12 @@ impl VisitRepository {
         .await?;
         Ok(())
     }
+
+    pub async fn cleanup(&self) -> AppResult<u64> {
+        let result =
+            sqlx::query("DELETE FROM visits WHERE occurred_at < now() - interval '180 days'")
+                .execute(&self.pool)
+                .await?;
+        Ok(result.rows_affected())
+    }
 }

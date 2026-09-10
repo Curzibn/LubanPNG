@@ -1,5 +1,6 @@
 use crate::repositories::rate_limit_repository::RateLimitRepository;
 use crate::repositories::task_repository::TaskRepository;
+use crate::repositories::visit_repository::VisitRepository;
 use crate::services::compression::CompressionService;
 use chrono::{Duration, Utc};
 use std::sync::Arc;
@@ -10,6 +11,7 @@ pub fn spawn_workers(
     service: Arc<CompressionService>,
     tasks: Arc<TaskRepository>,
     rate_limits: Arc<RateLimitRepository>,
+    visits: Arc<VisitRepository>,
     worker_count: usize,
     stale_secs: i64,
 ) -> Vec<JoinHandle<()>> {
@@ -45,6 +47,9 @@ pub fn spawn_workers(
             }
             if let Err(err) = rate_limits.cleanup().await {
                 tracing::warn!(error = %err, "rate limit cleanup failed");
+            }
+            if let Err(err) = visits.cleanup().await {
+                tracing::warn!(error = %err, "visit retention cleanup failed");
             }
         }
     }));

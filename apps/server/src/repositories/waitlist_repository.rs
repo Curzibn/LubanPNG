@@ -33,13 +33,4 @@ impl WaitlistRepository {
         .await?;
         Ok(row)
     }
-
-    pub async fn count_for(&self, account_id: Uuid) -> AppResult<i64> {
-        let count: i64 =
-            sqlx::query_scalar("SELECT count(*) FROM waitlist_signups WHERE account_id = $1")
-                .bind(account_id)
-                .fetch_one(&self.pool)
-                .await?;
-        Ok(count)
-    }
 }
