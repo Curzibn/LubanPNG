@@ -644,6 +644,16 @@ fn download_rejects_path_traversal_and_unknown_files() {
 }
 
 #[test]
+fn unknown_api_path_returns_json_404() {
+    run(async {
+        let app = test_app().await;
+        let reply = app.get("/v1/nope").await;
+        assert_eq!(reply.status, StatusCode::NOT_FOUND);
+        assert_eq!(reply.json()["code"], 3003);
+    });
+}
+
+#[test]
 fn missing_file_field_returns_400() {
     run(async {
         let app = test_app().await;

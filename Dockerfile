@@ -3,10 +3,9 @@ WORKDIR /src
 RUN corepack enable && corepack prepare pnpm@10 --activate
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/web/package.json apps/web/package.json
-COPY packages/design-tokens/package.json packages/design-tokens/package.json
+COPY packages/design-tokens packages/design-tokens
 RUN pnpm install --frozen-lockfile
 COPY apps/web apps/web
-COPY packages/design-tokens packages/design-tokens
 RUN pnpm build
 
 FROM rust:1-bookworm AS server

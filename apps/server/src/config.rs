@@ -243,11 +243,29 @@ impl AppConfig {
             .add_source(config::File::with_name("config").required(false))
             .add_source(
                 config::Environment::with_prefix("APP")
+                    .prefix_separator("_")
                     .separator("__")
                     .try_parsing(true),
             )
             .build()?;
 
         config.try_deserialize()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AppConfig;
+
+    #[test]
+    fn environment_overrides_nested_keys_with_double_underscore() {
+        std::env::set_var("APP_DATABASE__URL", "postgres://probe@127.0.0.1:5432/probe");
+        std::env::set_var("APP_SERVER__PORT", "3456");
+        std::env::set_var("APP_AUTH__SECURE_COOKIES", "false");
+        let config = AppConfig::load().unwrap();
+        assert_eq!(config.database.url, "postgres://probe@127.0.0.1:5432/probe");
+        assert_eq!(config.server.port, 3456);
+        assert!(!config.auth.secure_cookies);
+        assert_eq!(config.storage.bucket, "lubanpng");
     }
 }

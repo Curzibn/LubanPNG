@@ -1,4 +1,5 @@
 use crate::config::AppConfig;
+use crate::error::AppError;
 use crate::handlers;
 use crate::infrastructure::compression::{
     CompressionStrategy, GifCompressionStrategy, JpegCompressionStrategy, PngCompressionStrategy,
@@ -17,8 +18,12 @@ use crate::services::quota::QuotaService;
 use crate::services::worker;
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::from_fn_with_state;
-use axum::routing::{get, post};
+use axum::routing::{any, get, post};
 use axum::Router;
+
+async fn unknown_api_path() -> AppError {
+    AppError::not_found("接口不存在")
+}
 use image::ImageFormat;
 use sqlx::PgPool;
 use std::collections::HashMap;
@@ -198,7 +203,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let mut router = Router::new()
         .merge(SwaggerUi::new("/swagger-ui").url("/api-doc/openapi.json", ApiDoc::openapi()))
         .route("/healthz", get(handlers::health::healthz))
-        .merge(api);
+        .merge(api)
+        .route("/v1/{*rest}", any(unknown_api_path));
 
     let static_dir = Path::new(&state.config.web.static_dir);
     if static_dir.is_dir() {
