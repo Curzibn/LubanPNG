@@ -1,0 +1,59 @@
+name: cli-publish
+
+on:
+  push:
+    tags:
+      - "cli-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: build, publish and release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build CLI
+        run: pnpm --filter lubanpng build
+      - name: Test CLI
+        run: pnpm --filter lubanpng test
+      - name: Pack CLI
+        working-directory: packages/cli
+        run: npm pack
+      - name: Publish to npm
+        working-directory: packages/cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "NPM_TOKEN 未配置，跳过 npm publish"
+            exit 0
+          fi
+          version="$(node -p "require('./package.json').version")"
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            tag_version="${GITHUB_REF_NAME#cli-v}"
+            if [ "$version" != "$tag_version" ]; then
+              echo "package.json 版本 $version 与 tag ${GITHUB_REF_NAME} 不一致" >&2
+              exit 1
+            fi
+          fi
+          npm publish --access public
+      - name: Attach tarball to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: packages/cli/lubanpng-*.tgz
+          generate_release_notes: true

@@ -9,3 +9,5 @@ config.json
 node_modules/
 apps/web/dist/
 packages/design-tokens/dist/
+packages/cli/dist/
+packages/cli/*.tgz

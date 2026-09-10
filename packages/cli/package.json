@@ -1,0 +1,43 @@
+{
+  "name": "lubanpng",
+  "version": "0.1.0",
+  "description": "LubanPNG command line image compressor",
+  "type": "module",
+  "bin": {
+    "lubanpng": "dist/main.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').chmodSync('dist/main.js', 0o755)\"",
+    "test": "vitest run",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "prepack": "npm run build"
+  },
+  "keywords": [
+    "lubanpng",
+    "image",
+    "compress",
+    "tinypng",
+    "cli"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Curzibn/LubanPNG.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://lubanpng.wizthink.cn",
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.2",
+    "typescript": "7.0.2",
+    "vitest": "5.0.0"
+  }
+}
