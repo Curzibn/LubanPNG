@@ -14,6 +14,7 @@
   ],
   "scripts": {
     "generate": "node generate.ts",
+    "generate:og": "node render-og.ts",
     "postinstall": "node generate.ts",
     "test": "vitest run",
     "lint": "tsc --noEmit"

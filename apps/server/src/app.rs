@@ -19,8 +19,10 @@ use crate::services::auth::AuthService;
 use crate::services::compression::CompressionService;
 use crate::services::quota::QuotaService;
 use crate::services::worker;
-use axum::extract::DefaultBodyLimit;
+use axum::extract::{DefaultBodyLimit, State};
+use axum::http::{header, StatusCode, Uri};
 use axum::middleware::from_fn_with_state;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get, post};
 use axum::Router;
 use image::ImageFormat;
@@ -30,7 +32,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tower_http::cors::CorsLayer;
-use tower_http::services::{ServeDir, ServeFile};
+use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
@@ -38,6 +40,29 @@ use utoipa_swagger_ui::SwaggerUi;
 
 async fn unknown_api_path() -> AppError {
     AppError::not_found("接口不存在")
+}
+
+type SpaIndex = Arc<String>;
+
+async fn serve_spa(uri: Uri, State(index): State<SpaIndex>) -> Response {
+    let last_segment = uri.path().rsplit('/').next().unwrap_or_default();
+    if last_segment.contains('.') {
+        (
+            StatusCode::NOT_FOUND,
+            [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+            String::from("Not Found"),
+        )
+            .into_response()
+    } else {
+        (
+            [
+                (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+                (header::CACHE_CONTROL, "no-cache"),
+            ],
+            index.as_ref().clone(),
+        )
+            .into_response()
+    }
 }
 
 pub struct AppState {
@@ -229,12 +254,94 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 
     let static_dir = Path::new(&state.config.web.static_dir);
     if static_dir.is_dir() {
-        let index = static_dir.join("index.html");
-        router = router.fallback_service(ServeDir::new(static_dir).fallback(ServeFile::new(index)));
+        let index_path = static_dir.join("index.html");
+        let index = std::fs::read_to_string(&index_path).unwrap_or_default();
+        let spa = Router::new().fallback(serve_spa).with_state(Arc::new(index));
+        router = router.fallback_service(ServeDir::new(static_dir).fallback(spa));
     }
 
     router
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::Request;
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn spa_fallback_serves_index_for_extensionless_routes() {
+        let index: SpaIndex = Arc::new("<html>lubanpng</html>".to_string());
+        let response = serve_spa("/dashboard".parse().unwrap(), State(index)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "text/html; charset=utf-8"
+        );
+    }
+
+    #[tokio::test]
+    async fn spa_fallback_rejects_missing_files_instead_of_serving_index() {
+        let index: SpaIndex = Arc::new("<html>lubanpng</html>".to_string());
+        let response = serve_spa("/robots.txt".parse().unwrap(), State(index)).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn static_service_serves_real_files_with_their_content_type() {
+        let dir = std::env::temp_dir().join(format!("lubanpng-static-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("index.html"), "<html>lubanpng</html>").unwrap();
+        std::fs::write(dir.join("robots.txt"), "User-agent: *\nAllow: /\n").unwrap();
+        std::fs::write(dir.join("sitemap.xml"), "<urlset></urlset>").unwrap();
+
+        let index = std::fs::read_to_string(dir.join("index.html")).unwrap();
+        let spa = Router::new()
+            .fallback(serve_spa)
+            .with_state(Arc::new(index));
+        let service = ServeDir::new(&dir).fallback(spa);
+
+        let fetch = |path: &str| {
+            let service = service.clone();
+            let request = Request::builder()
+                .uri(path)
+                .body(Body::empty())
+                .unwrap();
+            async move { service.oneshot(request).await.unwrap() }
+        };
+
+        let robots = fetch("/robots.txt").await;
+        assert_eq!(robots.status(), StatusCode::OK);
+        assert!(
+            robots.headers()[header::CONTENT_TYPE]
+                .to_str()
+                .unwrap()
+                .starts_with("text/plain")
+        );
+
+        let sitemap = fetch("/sitemap.xml").await;
+        assert_eq!(sitemap.status(), StatusCode::OK);
+        assert!(
+            sitemap.headers()[header::CONTENT_TYPE]
+                .to_str()
+                .unwrap()
+                .contains("xml")
+        );
+
+        let page = fetch("/pricing").await;
+        assert_eq!(page.status(), StatusCode::OK);
+        assert_eq!(
+            page.headers()[header::CONTENT_TYPE],
+            "text/html; charset=utf-8"
+        );
+
+        let missing = fetch("/og.png").await;
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

@@ -16,5 +16,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["tokens.ts", "render.ts", "generate.ts", "theme.test.ts"]
+  "include": ["tokens.ts", "render.ts", "generate.ts", "render-og.ts", "theme.test.ts"]
 }
