@@ -110,7 +110,7 @@ const Step = ({ number, children }: { number: number; children: ReactNode }) => 
 const Prose = ({ children }: { children: ReactNode }) => <p className="text-body text-ink-secondary">{children}</p>
 
 const endpointRows = [
-  { method: "POST", path: "/v1/images/compress", purpose: "上传一张图，入队压缩，扣 1 次；带 convert 转换格式再扣 1 次", auth: "Key / 会话 / 匿名" },
+  { method: "POST", path: "/v1/images/compress", purpose: "上传一张图，入队压缩，产出更小文件时计 1 次；带 convert 转换格式再计 1 次", auth: "Key / 会话 / 匿名" },
   { method: "GET", path: "/v1/images/compress/{task_id}", purpose: "任务状态，可选 wait 长轮询", auth: "同上" },
   { method: "GET", path: "/v1/images/download/{filename}", purpose: "下载产物", auth: "同上" },
   { method: "GET", path: "/v1/me", purpose: "当前身份、套餐、本期额度与重置时间", auth: "同上" },
@@ -290,7 +290,7 @@ export const DevelopersPage = () => {
           </Section>
 
           <Section id="quota" title="额度与错误">
-            <Prose>每个响应都带三个额度头，扣次发生在任务成功完成时，失败自动退回；格式转换额外计 1 次。</Prose>
+            <Prose>每个响应都带三个额度头，只有真正产出更小文件才计一次，失败或产物不小于原图（保留原图）自动退回；格式转换额外计 1 次。</Prose>
             <CodeBlock tone="panel" label="额度响应头">
               {quotaHeadersSample}
             </CodeBlock>

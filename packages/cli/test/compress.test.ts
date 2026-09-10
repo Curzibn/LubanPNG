@@ -142,8 +142,8 @@ describe("compressCommand", () => {
     const saved = await readFile(join(root, "images", "photo.png"))
     expect(Array.from(saved)).toEqual([1, 2, 3, 4])
     const text = output.join("")
-    expect(text).toContain("保留原图")
-    expect(text).toContain("1 张无收益保留原图")
+    expect(text).toContain("无收益，保留原图（不计次）")
+    expect(text).toContain("1 张无收益保留原图（不计次）")
   })
 
   it("rejects --out collisions from same-named inputs", async () => {

@@ -60,7 +60,7 @@ const plans: PlanCard[] = [
 ]
 
 const faqs = [
-  { question: "压缩失败会扣次数吗？", answer: "不会。只有成功产出压缩文件才计一次。" },
+  { question: "压缩失败或没有变小会扣次数吗？", answer: "都不会。压缩失败不计次；压缩后没有变小、保留原图的也不计次。只有真正产出更小文件才计一次。" },
   { question: "次数什么时候重置？", answer: "未登录按天，注册用户按自然月，重置时间在工作台里可见。" },
   { question: "网页和 API 分开算吗？", answer: "不分。一个账号一份次数，网页、API、CLI 共用。" },
   {
@@ -169,7 +169,7 @@ export const PricingPage = () => {
       <section className="flex flex-col gap-4 pb-8 pt-10 md:items-center md:pb-12 md:pt-18 md:text-center">
         <h1 className="font-display text-display-sm text-ink md:text-display-xl">一个额度池，三个入口</h1>
         <p className="max-w-lede-sm text-body text-pretty text-ink-secondary md:text-lede">
-          网页、API、CLI 用的是同一份次数。一次成功压缩计一次，失败不计。
+          网页、API、CLI 用的是同一份次数。只有真正产出更小文件才计一次，失败与无收益都不计。
         </p>
       </section>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3 md:items-stretch md:gap-6">

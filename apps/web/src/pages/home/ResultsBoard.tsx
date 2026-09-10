@@ -58,10 +58,10 @@ export const ResultsBoard = ({
         </ul>
       </div>
       <div className="hidden justify-between px-1 pt-3 text-label text-ink-secondary md:flex">
-        <span>压缩失败的图片不计次数。</span>
+        <span>压缩失败或没有变小的图片不计次数。</span>
         <span>产物保留 {retention} 小时后自动删除。</span>
       </div>
-      <p className="text-label-sm text-ink-secondary md:hidden">压缩失败不计次数 · 产物保留 {retention} 小时</p>
+      <p className="text-label-sm text-ink-secondary md:hidden">失败或没变小不计次数 · 产物保留 {retention} 小时</p>
     </section>
   )
 }

@@ -204,7 +204,7 @@ export const compressCommand = async (
     }
     const compressed = pair.compressed.padStart(SIZE_COLUMN)
     if (outcome.retained) {
-      context.io.write(`  ${name}  ${original} → ${compressed}   无收益，保留原图\n`)
+      context.io.write(`  ${name}  ${original} → ${compressed}   无收益，保留原图（不计次）\n`)
       return
     }
     const percent = savingsPercent(outcome.originalSize, outcome.compressedSize)
@@ -285,7 +285,7 @@ export const compressCommand = async (
   ]
   const converted = outcomes.filter((outcome) => outcome.converted !== null)
   if (converted.length > 0) parts.push(`${converted.length} 张已转换`)
-  if (retained.length > 0) parts.push(`${retained.length} 张无收益保留原图`)
+  if (retained.length > 0) parts.push(`${retained.length} 张无收益保留原图（不计次）`)
   if (failed.length > 0) parts.push(`${failed.length} 张失败`)
   context.io.write(`  ${parts.join("，")}\n`)
 
