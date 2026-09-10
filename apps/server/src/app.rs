@@ -20,10 +20,6 @@ use axum::extract::DefaultBodyLimit;
 use axum::middleware::from_fn_with_state;
 use axum::routing::{any, get, post};
 use axum::Router;
-
-async fn unknown_api_path() -> AppError {
-    AppError::not_found("接口不存在")
-}
 use image::ImageFormat;
 use sqlx::PgPool;
 use std::collections::HashMap;
@@ -36,6 +32,10 @@ use tower_http::trace::TraceLayer;
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
+
+async fn unknown_api_path() -> AppError {
+    AppError::not_found("接口不存在")
+}
 
 pub struct AppState {
     pub config: AppConfig,

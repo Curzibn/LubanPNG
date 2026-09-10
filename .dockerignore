@@ -1,0 +1,14 @@
+.git
+target
+node_modules
+**/node_modules
+apps/web/dist
+packages/design-tokens/dist
+deploy
+uploads
+outputs
+config.toml
+config.yaml
+config.json
+.env
+.DS_Store
