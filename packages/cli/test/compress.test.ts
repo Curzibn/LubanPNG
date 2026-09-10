@@ -43,11 +43,13 @@ describe("collectFiles", () => {
     await writeFile(join(root, "images", "nested", "b.JPG"), "b")
     await writeFile(join(root, "images", "nested", "c.webp"), "c")
     await writeFile(join(root, "images", "d.avif"), "d")
+    await writeFile(join(root, "images", "e.HEIC"), "e")
     await writeFile(join(root, "images", "notes.txt"), "n")
     const files = await collectFiles([join(root, "images")], true)
     expect(files.map((file) => file.relative).sort()).toEqual([
       "a.png",
       "d.avif",
+      "e.HEIC",
       join("nested", "b.JPG"),
       join("nested", "c.webp"),
     ])
@@ -178,6 +180,23 @@ describe("compressCommand", () => {
     const text = output.join("")
     expect(text).toContain("→ photo.webp")
     expect(text).toContain("1 张已转换")
+  })
+
+  it("refuses to overwrite a HEIC source in place and counts it as failed", async () => {
+    await writeFile(join(root, "images", "IMG_0002.heic"), new Uint8Array([1, 2, 3]))
+    const output: string[] = []
+    const code = await compressCommand(context(output), {
+      paths: [join(root, "images", "IMG_0002.heic")],
+      out: undefined,
+      inPlace: true,
+      recursive: false,
+      concurrency: 1,
+    })
+    expect(code).toBe(1)
+    const text = output.join("")
+    expect(text).toContain("不能就地覆盖")
+    const untouched = await readFile(join(root, "images", "IMG_0002.heic"))
+    expect(Array.from(untouched)).toEqual([1, 2, 3])
   })
 
   it("keeps the source extension when the target is the same family", () => {

@@ -55,6 +55,15 @@ describe("validateFiles", () => {
     expect(result.truncated).toBe(false)
   })
 
+  it("explains the HEIC path instead of the generic rejection", () => {
+    const result = validateFiles([file("IMG_0001.HEIC", 10, ""), file("blob.bin", 10, "image/heif")], limit)
+    expect(result.accepted).toEqual([])
+    expect(result.rejected.map((entry) => entry.reason)).toEqual([
+      "HEIC 暂不支持：iPhone 相册选图时 Safari 会自动转成 JPEG，其他设备请先导出为 JPEG",
+      "HEIC 暂不支持：iPhone 相册选图时 Safari 会自动转成 JPEG，其他设备请先导出为 JPEG",
+    ])
+  })
+
   it("keeps only the first twenty accepted files per batch", () => {
     const files = Array.from({ length: 23 }, (_, i) => file(`img-${i}.png`, 100, "image/png"))
     const result = validateFiles(files, limit)

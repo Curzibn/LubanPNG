@@ -11,10 +11,11 @@ import { API_KEY_ENV, resolveApiKey } from "../config.js"
 import type { Context } from "../context.js"
 import { UsageError } from "../errors.js"
 import { formatBytes, formatSavings, formatSizePair, periodNoun, savingsPercent } from "../format.js"
+import { HEIC_EXTENSIONS, HEIC_IN_PLACE_MESSAGE, isHeicPath, prepareHeicUpload, type PreparedUpload } from "../heic.js"
 
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif"])
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ...HEIC_EXTENSIONS])
 const FORMAT_EXTENSIONS: Record<string, string> = { png: ".png", jpeg: ".jpg", gif: ".gif", webp: ".webp", avif: ".avif" }
-const SUPPORTED_FORMATS_LABEL = "PNG / JPEG / GIF / WebP / AVIF"
+const SUPPORTED_FORMATS_LABEL = "PNG / JPEG / GIF / WebP / AVIF，macOS 上另支持 HEIC"
 const WAIT_SECONDS = 30
 const MAX_POLL_ROUNDS = 40
 const SIZE_COLUMN = 9
@@ -222,8 +223,17 @@ export const compressCommand = async (
       compressedSize: 0,
       error,
     })
+    let prepared: PreparedUpload = { path: file.path, name: file.name, cleanup: async () => undefined }
+    if (isHeicPath(file.path)) {
+      if (options.inPlace) return failure(HEIC_IN_PLACE_MESSAGE)
+      try {
+        prepared = await prepareHeicUpload(file.path)
+      } catch (error) {
+        return failure(error instanceof Error ? error.message : String(error))
+      }
+    }
     try {
-      const upload = await client.uploadImage(file.path, {
+      const upload = await client.uploadImage(prepared.path, {
         convert: options.convert,
         background: options.background,
       })
@@ -244,10 +254,12 @@ export const compressCommand = async (
       const target = outputPathFor(file, options, outputFormat)
       await mkdir(dirname(target), { recursive: true })
       await writeFileAtomic(target, bytes)
-      const converted = view.target_format === null || view.target_format === undefined ? null : basename(target)
+      const converted = extname(target).toLowerCase() === extname(file.path).toLowerCase() ? null : basename(target)
       return { file, ok: true, retained: false, converted, originalSize, compressedSize, error: null }
     } catch (error) {
       return failure(describeError(error))
+    } finally {
+      await prepared.cleanup()
     }
   }
 

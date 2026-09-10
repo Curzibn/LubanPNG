@@ -7,6 +7,16 @@ export const MAX_POLLS_PER_TASK = 90
 export const CONVERSION_EXTRA_UNITS = 1
 export const JPEG_FLATTEN_BACKGROUND = tokens.color.surface.toLowerCase()
 export const FORMAT_LIST_LABEL = "PNG、JPEG、GIF、WebP、AVIF"
+export const HEIC_HINT = "HEIC 暂不支持：iPhone 相册选图时 Safari 会自动转成 JPEG，其他设备请先导出为 JPEG"
+
+const heicMimeTypes = new Set(["image/heic", "image/heif", "image/heic-sequence", "image/heif-sequence"])
+const heicExtensions = new Set(["heic", "heif"])
+
+export const isHeicFile = (name: string, mimeType: string): boolean => {
+  if (heicMimeTypes.has(mimeType.toLowerCase())) return true
+  const dot = name.lastIndexOf(".")
+  return dot >= 0 && heicExtensions.has(name.slice(dot + 1).toLowerCase())
+}
 
 export type ImageFormat = "PNG" | "JPG" | "GIF" | "WEBP" | "AVIF"
 
@@ -78,7 +88,7 @@ export const validateFiles = <T extends FileLike>(files: T[], maxFileSize: numbe
   const rejected: RejectedFile[] = []
   for (const file of files) {
     if (detectFormat(file.name, file.type) === null) {
-      rejected.push({ name: file.name, reason: `只支持 ${FORMAT_LIST_LABEL}` })
+      rejected.push({ name: file.name, reason: isHeicFile(file.name, file.type) ? HEIC_HINT : `只支持 ${FORMAT_LIST_LABEL}` })
       continue
     }
     if (maxFileSize !== null && file.size > maxFileSize) {

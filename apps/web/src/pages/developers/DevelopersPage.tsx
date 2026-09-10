@@ -133,7 +133,7 @@ const cliRows = [
   {
     command: "compress",
     meaning:
-      "文件或目录；--out 输出目录，--in-place 原地覆盖，--recursive 递归，--concurrency 并发数，--convert 转换格式（png / jpeg / webp / avif），--background 透明图转 JPEG 的背景色",
+      "文件或目录；--out 输出目录，--in-place 原地覆盖，--recursive 递归，--concurrency 并发数，--convert 转换格式（png / jpeg / webp / avif），--background 透明图转 JPEG 的背景色；macOS 上 HEIC 先由系统转成 JPEG 再上传",
   },
   { command: "usage", meaning: "套餐、本期用量与重置时间" },
 ]
@@ -177,7 +177,7 @@ const formatRows = [
   { format: "GIF", input: "支持", output: "不作为转换目标", note: "动画逐帧量化，帧间隔与循环保留" },
   { format: "WebP", input: "支持", output: "支持", note: "动态 WebP 逐帧重编码" },
   { format: "AVIF", input: "支持", output: "支持", note: "静态图" },
-  { format: "HEIC / HEIF", input: "不支持", output: "不支持", note: "返回 1001 并提示先导出为 JPEG" },
+  { format: "HEIC / HEIF", input: "API 不支持", output: "不支持", note: "网页在 iPhone Safari 选图时自动转成 JPEG 上传；CLI 在 macOS 上用系统转换器转成 JPEG 后上传；API 直传返回 1001" },
 ]
 
 const downloadSample = (origin: string) =>

@@ -11,7 +11,7 @@ export const HELP = [
   "命令：",
   "  login                粘贴 API Key，校验后保存到本机",
   "  logout               清除本机保存的 API Key",
-  "  compress <路径...>   压缩文件或目录，可选转换格式",
+  "  compress <路径...>   压缩文件或目录，可选转换格式；macOS 上 HEIC 先由系统转成 JPEG",
   "  usage                查看套餐、本期用量与重置时间",
   "",
   "全局选项：",
