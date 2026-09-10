@@ -2,7 +2,7 @@ import { LinkButton } from "../../components/Button.tsx"
 import { CodeBlock } from "../../components/CodeBlock.tsx"
 import { Container } from "../../components/Container.tsx"
 import { Eyebrow } from "../../components/Eyebrow.tsx"
-import { CLI_AVAILABLE, CLI_INSTALL_COMMAND, CLI_PENDING_NOTE, CLI_PLATFORMS } from "../../lib/cliRelease.ts"
+import { CLI_INSTALL_COMMAND, CLI_PLATFORMS } from "../../lib/cliRelease.ts"
 
 const curlSample = (origin: string): string =>
   [
@@ -54,7 +54,7 @@ export const IntegrationTeaser = () => {
             <code className="rounded-control border-thin border-hairline bg-panel px-3 py-2 font-mono text-ui text-ink">
               {CLI_INSTALL_COMMAND}
             </code>
-            <p className="text-ink-secondary">{CLI_AVAILABLE ? CLI_PLATFORMS : CLI_PENDING_NOTE}</p>
+            <p className="text-ink-secondary">{CLI_PLATFORMS}</p>
           </div>
         </section>
       </div>

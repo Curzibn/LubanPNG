@@ -4,7 +4,7 @@ import { CodeBlock } from "../../components/CodeBlock.tsx"
 import { Container } from "../../components/Container.tsx"
 import { Eyebrow } from "../../components/Eyebrow.tsx"
 import { ExternalLinkIcon } from "../../components/icons.tsx"
-import { CLI_AVAILABLE, CLI_INSTALL_COMMAND, CLI_PENDING_NOTE, CLI_PLATFORMS } from "../../lib/cliRelease.ts"
+import { CLI_INSTALL_COMMAND, CLI_PLATFORMS } from "../../lib/cliRelease.ts"
 import { Table, Td, Th } from "../../components/Table.tsx"
 import { cx } from "../../lib/cx.ts"
 
@@ -258,7 +258,7 @@ export const DevelopersPage = () => {
               %APPDATA%\lubanpng）。
             </Prose>
             <CodeBlock label="安装（npm）">{CLI_INSTALL_COMMAND}</CodeBlock>
-            <Prose>{CLI_AVAILABLE ? CLI_PLATFORMS : CLI_PENDING_NOTE}</Prose>
+            <Prose>{CLI_PLATFORMS}</Prose>
             <CodeBlock label="CLI 示例">{cliSample}</CodeBlock>
             <Table label="CLI 命令">
               <tbody>
