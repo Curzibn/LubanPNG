@@ -4,7 +4,14 @@ import { Eyebrow } from "../../components/Eyebrow.tsx"
 import { Notice } from "../../components/Notice.tsx"
 import { Table, Td, Th } from "../../components/Table.tsx"
 import { cx } from "../../lib/cx.ts"
-import { formatBytes, formatSavings, formatSizePair, formatUnixRelative, savingsPercent } from "../../lib/format.ts"
+import {
+  formatBytes,
+  formatSavings,
+  formatSizePair,
+  formatUnixRelative,
+  outputFileName,
+  savingsPercent,
+} from "../../lib/format.ts"
 
 const sourceLabel: Record<TaskSource, string> = { web: "网页", api: "API", cli: "CLI" }
 
@@ -41,7 +48,11 @@ const SizeCell = ({ task }: { task: TaskRecord }) => {
 const ActionCell = ({ task }: { task: TaskRecord }) => {
   if (task.downloadable && task.compressed_url) {
     return (
-      <a href={task.compressed_url} download={task.original_name} className="text-ink transition-colors hover:text-vermilion">
+      <a
+        href={task.compressed_url}
+        download={outputFileName(task.original_name, task.output_format)}
+        className="text-ink transition-colors hover:text-vermilion"
+      >
         下载
       </a>
     )
@@ -115,6 +126,11 @@ export const TasksCard = ({ retentionHours }: { retentionHours: number }) => {
                 <Td className="whitespace-nowrap font-mono text-ink-secondary">{formatUnixRelative(task.created_at)}</Td>
                 <Td className="max-w-sidebar truncate font-mono" title={task.original_name}>
                   {task.original_name}
+                  {task.target_format && (
+                    <span className="ml-2 rounded-mark bg-panel px-1.5 py-0.5 text-label-2xs font-semibold text-ink-secondary">
+                      → {task.target_format.toUpperCase()}
+                    </span>
+                  )}
                 </Td>
                 <Td className="whitespace-nowrap font-mono text-ink-secondary">
                   <SizeCell task={task} />

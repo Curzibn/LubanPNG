@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use axum::body::{to_bytes, Body};
 use axum::http::{header, HeaderMap, Method, Request, StatusCode};
 use axum::Router;
+use image::GenericImageView;
 use lubanpng::app::{build_router, build_state, start_workers};
 use lubanpng::config::AppConfig;
 use lubanpng::error::AppResult;
@@ -72,6 +73,7 @@ fn test_config() -> AppConfig {
     config.auth.secure_cookies = false;
     config.auth.cookie_secret = "test-secret".to_string();
     config.server.max_concurrent_tasks = 2;
+    config.database.max_connections = 3;
     config
 }
 
@@ -231,6 +233,32 @@ impl TestApp {
         .await
     }
 
+    async fn upload_with(&self, filename: &str, content: &[u8], fields: &[(&str, &str)]) -> Reply {
+        let (content_type, body) = multipart_with_fields(filename, content, fields);
+        self.send(
+            Method::POST,
+            "/v1/images/compress",
+            Some(&content_type),
+            body,
+            None,
+        )
+        .await
+    }
+
+    async fn upload_with_ok(&self, filename: &str, content: &[u8], fields: &[(&str, &str)]) -> String {
+        let reply = self.upload_with(filename, content, fields).await;
+        assert_eq!(
+            reply.status,
+            StatusCode::OK,
+            "upload should succeed: {}",
+            String::from_utf8_lossy(&reply.body)
+        );
+        reply.json()["data"]["task_id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
     async fn upload_ok(&self, filename: &str, content: &[u8], bearer: Option<&str>) -> String {
         let reply = self.upload(filename, content, bearer).await;
         assert_eq!(
@@ -316,6 +344,155 @@ fn multipart_body(field: &str, filename: &str, content: &[u8]) -> (String, Body)
         format!("multipart/form-data; boundary={}", boundary),
         Body::from(body),
     )
+}
+
+fn multipart_with_fields(filename: &str, content: &[u8], fields: &[(&str, &str)]) -> (String, Body) {
+    let boundary = "----LubanPNGTestBoundary";
+    let mut body = Vec::new();
+    for (name, value) in fields {
+        body.extend_from_slice(
+            format!(
+                "--{}\r\nContent-Disposition: form-data; name=\"{}\"\r\n\r\n{}\r\n",
+                boundary, name, value
+            )
+            .as_bytes(),
+        );
+    }
+    body.extend_from_slice(
+        format!(
+            "--{}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{}\"\r\nContent-Type: application/octet-stream\r\n\r\n",
+            boundary, filename
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(content);
+    body.extend_from_slice(format!("\r\n--{}--\r\n", boundary).as_bytes());
+    (
+        format!("multipart/form-data; boundary={}", boundary),
+        Body::from(body),
+    )
+}
+
+fn photo_rgba(w: u32, h: u32, shift: u32) -> image::RgbaImage {
+    let mut img = image::RgbaImage::new(w, h);
+    for y in 0..h {
+        for x in 0..w {
+            img.put_pixel(
+                x,
+                y,
+                image::Rgba([
+                    (((x + shift) * (x + shift) / 7 + y * 3) % 256) as u8,
+                    ((x + y * y / 5) % 256) as u8,
+                    ((x * y / 3) % 256) as u8,
+                    255,
+                ]),
+            );
+        }
+    }
+    img
+}
+
+fn lossless_webp(w: u32, h: u32) -> Vec<u8> {
+    use image::ImageEncoder;
+    let rgb = image::DynamicImage::ImageRgba8(photo_rgba(w, h, 0)).to_rgb8();
+    let mut out = Vec::new();
+    image::codecs::webp::WebPEncoder::new_lossless(&mut out)
+        .write_image(rgb.as_raw(), w, h, image::ExtendedColorType::Rgb8)
+        .unwrap();
+    out
+}
+
+fn sample_avif(w: u32, h: u32, quality: u8) -> Vec<u8> {
+    use image::ImageEncoder;
+    let img = photo_rgba(w, h, 0);
+    let mut out = Vec::new();
+    image::codecs::avif::AvifEncoder::new_with_speed_quality(&mut out, 10, quality)
+        .write_image(img.as_raw(), w, h, image::ExtendedColorType::Rgba8)
+        .unwrap();
+    out
+}
+
+fn transparent_png(w: u32, h: u32) -> Vec<u8> {
+    let mut img = image::RgbaImage::new(w, h);
+    for (x, y, pixel) in img.enumerate_pixels_mut() {
+        *pixel = image::Rgba([(x * 4) as u8, (y * 4) as u8, 120, if x < w / 2 { 0 } else { 255 }]);
+    }
+    let mut buf = Vec::new();
+    image::DynamicImage::ImageRgba8(img)
+        .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+        .unwrap();
+    buf
+}
+
+fn animated_gif(frames: u32) -> Vec<u8> {
+    use image::codecs::gif::{GifEncoder, Repeat};
+    let mut out = Vec::new();
+    {
+        let mut encoder = GifEncoder::new(&mut out);
+        encoder.set_repeat(Repeat::Infinite).unwrap();
+        for step in 0..frames {
+            let mut img = image::RgbaImage::from_pixel(64, 64, image::Rgba([240, 240, 230, 255]));
+            for y in 0..16 {
+                for x in 0..16 {
+                    img.put_pixel(8 + step * 12 + x, 20 + y, image::Rgba([200, 30, 30, 255]));
+                }
+            }
+            encoder
+                .encode_frame(image::Frame::from_parts(
+                    img,
+                    0,
+                    0,
+                    image::Delay::from_numer_denom_ms(100, 1),
+                ))
+                .unwrap();
+        }
+    }
+    out
+}
+
+fn animated_png(frames: u32) -> Vec<u8> {
+    let mut out = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut out, 48, 48);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder.set_animated(frames, 0).unwrap();
+        encoder.set_frame_delay(1, 10).unwrap();
+        let mut writer = encoder.write_header().unwrap();
+        for step in 0..frames {
+            let mut img = image::RgbaImage::from_pixel(48, 48, image::Rgba([20, 40, 90, 255]));
+            for y in 0..12 {
+                for x in 0..12 {
+                    img.put_pixel(4 + step * 10 + x, 18 + y, image::Rgba([250, 200, 40, 255]));
+                }
+            }
+            writer.write_image_data(img.as_raw()).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+    out
+}
+
+fn gif_frame_count(data: &[u8]) -> usize {
+    use image::AnimationDecoder;
+    image::codecs::gif::GifDecoder::new(std::io::Cursor::new(data))
+        .unwrap()
+        .into_frames()
+        .collect_frames()
+        .unwrap()
+        .len()
+}
+
+fn apng_frame_count(data: &[u8]) -> usize {
+    use image::AnimationDecoder;
+    image::codecs::png::PngDecoder::new(std::io::Cursor::new(data))
+        .unwrap()
+        .apng()
+        .unwrap()
+        .into_frames()
+        .collect_frames()
+        .unwrap()
+        .len()
 }
 
 fn unique_email() -> String {
@@ -1151,5 +1328,221 @@ fn recompressing_never_grows_the_artifact() {
         } else {
             assert_eq!(artifact.len() as u64, compressed_size);
         }
+    });
+}
+
+#[test]
+fn webp_full_pipeline_recompresses_lossless_source() {
+    run(async {
+        let app = test_app().await;
+        let webp = lossless_webp(128, 128);
+        let task_id = app.upload_ok("shot.webp", &webp, None).await;
+        let data = app.wait_final(&task_id).await;
+        assert_eq!(data["status"], "completed", "{}", data);
+        assert!(data["compressed_size"].as_u64().unwrap() < webp.len() as u64);
+        assert_eq!(data["output_format"], "webp");
+        assert_eq!(data["quota_units"], 1);
+        let url = data["compressed_url"].as_str().unwrap();
+        assert!(url.ends_with(".webp"), "{}", url);
+        let stored = app
+            .storage
+            .get(&format!("outputs/free/{}.webp", task_id))
+            .await
+            .unwrap();
+        assert_eq!(&stored[8..12], b"WEBP");
+        assert_eq!(image::load_from_memory(&stored).unwrap().dimensions(), (128, 128));
+    });
+}
+
+#[test]
+fn avif_full_pipeline_decodes_and_recompresses() {
+    run(async {
+        let app = test_app().await;
+        let avif = sample_avif(128, 96, 95);
+        let task_id = app.upload_ok("shot.avif", &avif, None).await;
+        let data = app.wait_final(&task_id).await;
+        assert_eq!(data["status"], "completed", "{}", data);
+        assert!(data["compressed_size"].as_u64().unwrap() <= avif.len() as u64);
+        assert!(data["compressed_url"].as_str().unwrap().ends_with(".avif"));
+        let stored = app
+            .storage
+            .get(&format!("outputs/free/{}.avif", task_id))
+            .await
+            .unwrap();
+        assert_eq!(image::load_from_memory(&stored).unwrap().dimensions(), (128, 96));
+    });
+}
+
+#[test]
+fn converting_png_to_webp_costs_two_units() {
+    run(async {
+        let app = test_app().await;
+        let png = gradient_png(96, 96);
+        let task_id = app
+            .upload_with_ok("logo.png", &png, &[("convert", "webp")])
+            .await;
+        let data = app.wait_final(&task_id).await;
+        assert_eq!(data["status"], "completed", "{}", data);
+        assert_eq!(data["target_format"], "webp");
+        assert_eq!(data["output_format"], "webp");
+        assert_eq!(data["quota_units"], 2);
+        let url = data["compressed_url"].as_str().unwrap();
+        assert_eq!(url, &format!("/v1/images/download/{}.webp", task_id));
+        let stored = app
+            .storage
+            .get(&format!("outputs/free/{}.webp", task_id))
+            .await
+            .unwrap();
+        assert_eq!(&stored[8..12], b"WEBP");
+        let me = app.get("/v1/me").await.json()["data"].clone();
+        assert_eq!(me["quota"]["used"], 2);
+        assert_eq!(me["quota"]["remaining"], 3);
+    });
+}
+
+#[test]
+fn converting_to_the_same_format_counts_once() {
+    run(async {
+        let app = test_app().await;
+        let png = gradient_png(64, 64);
+        let task_id = app
+            .upload_with_ok("same.png", &png, &[("convert", "image/png")])
+            .await;
+        let data = app.wait_final(&task_id).await;
+        assert_eq!(data["status"], "completed", "{}", data);
+        assert_eq!(data["quota_units"], 1);
+        assert!(data["target_format"].is_null());
+        assert!(data["compressed_url"].as_str().unwrap().ends_with(".png"));
+        let me = app.get("/v1/me").await.json()["data"].clone();
+        assert_eq!(me["quota"]["used"], 1);
+    });
+}
+
+#[test]
+fn transparent_png_to_jpeg_needs_background_and_refunds_both_units() {
+    run(async {
+        let app = test_app().await;
+        let png = transparent_png(64, 64);
+        let failed_id = app
+            .upload_with_ok("cutout.png", &png, &[("convert", "jpeg")])
+            .await;
+        let failed = app.wait_final(&failed_id).await;
+        assert_eq!(failed["status"], "failed", "{}", failed);
+        assert!(
+            failed["error_msg"].as_str().unwrap().contains("背景色"),
+            "{}",
+            failed
+        );
+        let me = app.get("/v1/me").await.json()["data"].clone();
+        assert_eq!(me["quota"]["used"], 0);
+        assert_eq!(me["quota"]["remaining"], 5);
+
+        let ok_id = app
+            .upload_with_ok(
+                "cutout.png",
+                &png,
+                &[("convert", "jpeg"), ("background", "#ffffff")],
+            )
+            .await;
+        let done = app.wait_final(&ok_id).await;
+        assert_eq!(done["status"], "completed", "{}", done);
+        assert!(done["compressed_url"].as_str().unwrap().ends_with(".jpg"));
+        let stored = app
+            .storage
+            .get(&format!("outputs/free/{}.jpg", ok_id))
+            .await
+            .unwrap();
+        let decoded = image::load_from_memory(&stored).unwrap().to_rgb8();
+        let corner = decoded.get_pixel(0, 0);
+        assert!(corner[0] > 230 && corner[1] > 230 && corner[2] > 230, "{:?}", corner);
+        let me = app.get("/v1/me").await.json()["data"].clone();
+        assert_eq!(me["quota"]["used"], 2);
+    });
+}
+
+#[test]
+fn invalid_conversion_fields_are_rejected_before_quota() {
+    run(async {
+        let app = test_app().await;
+        let png = gradient_png(32, 32);
+        let bad_target = app.upload_with("a.png", &png, &[("convert", "gif")]).await;
+        assert_eq!(bad_target.status, StatusCode::BAD_REQUEST);
+        assert_eq!(bad_target.json()["code"], 1001);
+        let bad_background = app
+            .upload_with("a.png", &png, &[("convert", "jpeg"), ("background", "white")])
+            .await;
+        assert_eq!(bad_background.status, StatusCode::BAD_REQUEST);
+        assert_eq!(bad_background.json()["code"], 1001);
+        let me = app.get("/v1/me").await.json()["data"].clone();
+        assert_eq!(me["quota"]["remaining"], 5);
+    });
+}
+
+#[test]
+fn animated_gif_keeps_every_frame() {
+    run(async {
+        let app = test_app().await;
+        let gif = animated_gif(3);
+        let task_id = app.upload_ok("loop.gif", &gif, None).await;
+        let data = app.wait_final(&task_id).await;
+        assert_eq!(data["status"], "completed", "{}", data);
+        let stored = app
+            .storage
+            .get(&format!("outputs/free/{}.gif", task_id))
+            .await
+            .unwrap();
+        assert_eq!(gif_frame_count(&stored), 3);
+    });
+}
+
+#[test]
+fn animated_png_keeps_every_frame() {
+    run(async {
+        let app = test_app().await;
+        let apng = animated_png(3);
+        let task_id = app.upload_ok("loop.png", &apng, None).await;
+        let data = app.wait_final(&task_id).await;
+        assert_eq!(data["status"], "completed", "{}", data);
+        let stored = app
+            .storage
+            .get(&format!("outputs/free/{}.png", task_id))
+            .await
+            .unwrap();
+        assert_eq!(apng_frame_count(&stored), 3);
+    });
+}
+
+#[test]
+fn converting_an_animation_fails_clearly_and_refunds() {
+    run(async {
+        let app = test_app().await;
+        let gif = animated_gif(2);
+        let task_id = app
+            .upload_with_ok("loop.gif", &gif, &[("convert", "webp")])
+            .await;
+        let data = app.wait_final(&task_id).await;
+        assert_eq!(data["status"], "failed", "{}", data);
+        assert!(data["error_msg"].as_str().unwrap().contains("动图"), "{}", data);
+        let me = app.get("/v1/me").await.json()["data"].clone();
+        assert_eq!(me["quota"]["remaining"], 5);
+    });
+}
+
+#[test]
+fn heic_uploads_get_a_specific_rejection() {
+    run(async {
+        let app = test_app().await;
+        let mut heic = 24u32.to_be_bytes().to_vec();
+        heic.extend_from_slice(b"ftypheic");
+        heic.extend_from_slice(&[0, 0, 0, 0]);
+        heic.extend_from_slice(b"mif1heic");
+        heic.extend_from_slice(&[0u8; 64]);
+        let reply = app.upload("IMG_0001.HEIC", &heic, None).await;
+        assert_eq!(reply.status, StatusCode::BAD_REQUEST);
+        let body = reply.json();
+        assert_eq!(body["code"], 1001);
+        assert!(body["msg"].as_str().unwrap().contains("HEIC"), "{}", body);
+        let me = app.get("/v1/me").await.json()["data"].clone();
+        assert_eq!(me["quota"]["remaining"], 5);
     });
 }

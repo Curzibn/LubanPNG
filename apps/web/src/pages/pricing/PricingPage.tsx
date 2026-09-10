@@ -63,6 +63,10 @@ const faqs = [
   { question: "压缩失败会扣次数吗？", answer: "不会。只有成功产出压缩文件才计一次。" },
   { question: "次数什么时候重置？", answer: "未登录按天，注册用户按自然月，重置时间在工作台里可见。" },
   { question: "网页和 API 分开算吗？", answer: "不分。一个账号一份次数，网页、API、CLI 共用。" },
+  {
+    question: "格式转换怎么计？",
+    answer: "在压缩之外额外计 1 次：一张图压缩并转成 WebP 共计 2 次。目标格式与原格式相同时只计 1 次，转换失败同样不计次。",
+  },
 ]
 
 const WaitlistAction = ({ planId, dark }: { planId: WaitlistPlanId; dark: boolean }) => {

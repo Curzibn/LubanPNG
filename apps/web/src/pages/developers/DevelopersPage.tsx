@@ -1,3 +1,4 @@
+import { tokens } from "@lubanpng/design-tokens/tokens"
 import { useEffect, useState, type ReactNode } from "react"
 import { usePageTitle } from "../../app/usePageTitle.ts"
 import { CodeBlock } from "../../components/CodeBlock.tsx"
@@ -12,6 +13,7 @@ const sections = [
   { id: "auth", label: "认证" },
   { id: "quickstart", label: "快速开始" },
   { id: "endpoints", label: "端点" },
+  { id: "convert", label: "格式转换" },
   { id: "quota", label: "额度与错误" },
   { id: "cli", label: "CLI" },
 ] as const
@@ -108,7 +110,7 @@ const Step = ({ number, children }: { number: number; children: ReactNode }) => 
 const Prose = ({ children }: { children: ReactNode }) => <p className="text-body text-ink-secondary">{children}</p>
 
 const endpointRows = [
-  { method: "POST", path: "/v1/images/compress", purpose: "上传一张图，入队压缩，扣 1 次", auth: "Key / 会话 / 匿名" },
+  { method: "POST", path: "/v1/images/compress", purpose: "上传一张图，入队压缩，扣 1 次；带 convert 转换格式再扣 1 次", auth: "Key / 会话 / 匿名" },
   { method: "GET", path: "/v1/images/compress/{task_id}", purpose: "任务状态，可选 wait 长轮询", auth: "同上" },
   { method: "GET", path: "/v1/images/download/{filename}", purpose: "下载产物", auth: "同上" },
   { method: "GET", path: "/v1/me", purpose: "当前身份、套餐、本期额度与重置时间", auth: "同上" },
@@ -118,7 +120,7 @@ const endpointRows = [
 ]
 
 const errorRows = [
-  { http: "400", code: "1001", meaning: "参数错误，如缺少 file 字段" },
+  { http: "400", code: "1001", meaning: "参数错误，如缺少 file 字段、convert 或 background 不合法、HEIC 等不支持的格式" },
   { http: "413", code: "1004", meaning: "文件超过当前套餐上限" },
   { http: "401", code: "4001", meaning: "未登录或 Key 无效、已吊销" },
   { http: "429", code: "4003", meaning: "本期额度用尽，响应里给出重置时间" },
@@ -128,7 +130,11 @@ const errorRows = [
 
 const cliRows = [
   { command: "login / logout", meaning: "保存或清除本机 Key；也可用环境变量 LUBANPNG_API_KEY" },
-  { command: "compress", meaning: "文件或目录；--out 输出目录，--in-place 原地覆盖，--recursive 递归，--concurrency 并发数" },
+  {
+    command: "compress",
+    meaning:
+      "文件或目录；--out 输出目录，--in-place 原地覆盖，--recursive 递归，--concurrency 并发数，--convert 转换格式（png / jpeg / webp / avif），--background 透明图转 JPEG 的背景色",
+  },
   { command: "usage", meaning: "套餐、本期用量与重置时间" },
 ]
 
@@ -148,8 +154,31 @@ const statusSample = (origin: string) =>
     "",
     '{ "code": 0, "data": { "status": "completed",',
     '    "original_size": 2516582, "compressed_size": 933241,',
+    '    "output_format": "jpeg", "quota_units": 1,',
     '    "compressed_url": "/v1/images/download/compressed_550e8400-….jpg" } }',
   ].join("\n")
+
+const convertSample = (origin: string) =>
+  [
+    `curl -X POST ${origin}/v1/images/compress \\`,
+    '  -H "Authorization: Bearer lp_live_…" \\',
+    '  -F "file=@cutout.png" \\',
+    '  -F "convert=jpeg" \\',
+    `  -F "background=${tokens.color.surface.toLowerCase()}"`,
+    "",
+    '{ "code": 0, "data": { "status": "completed", "target_format": "jpeg",',
+    '    "output_format": "jpeg", "quota_units": 2,',
+    '    "compressed_url": "/v1/images/download/550e8400-….jpg" } }',
+  ].join("\n")
+
+const formatRows = [
+  { format: "PNG / APNG", input: "支持", output: "支持", note: "APNG 逐帧量化并保留动画" },
+  { format: "JPEG", input: "支持", output: "支持", note: "透明图转 JPEG 需要 background" },
+  { format: "GIF", input: "支持", output: "不作为转换目标", note: "动画逐帧量化，帧间隔与循环保留" },
+  { format: "WebP", input: "支持", output: "支持", note: "动态 WebP 逐帧重编码" },
+  { format: "AVIF", input: "支持", output: "支持", note: "静态图" },
+  { format: "HEIC / HEIF", input: "不支持", output: "不支持", note: "返回 1001 并提示先导出为 JPEG" },
+]
 
 const downloadSample = (origin: string) =>
   `curl -o photo.min.jpg "${origin}/v1/images/download/compressed_550e8400-….jpg"`
@@ -166,6 +195,10 @@ const cliSample = [
   "  logo@2x.png         312 KB →   96 KB   -69%",
   "  sticker_wave.gif   1.10 MB → 0.71 MB   -36%",
   "  本次 3 张，节省 2.11 MB，本月剩余 43 次",
+  "",
+  "$ lubanpng compress ./hero.png --convert webp",
+  "  hero.png           1.20 MB → 0.31 MB   -74%   → hero.webp",
+  "  本次 1 张，节省 0.89 MB，本月剩余 41 次，1 张已转换",
   "",
   "$ lubanpng usage",
   "  免费套餐 · 本月已用 7 / 50 · 10 月 1 日重置",
@@ -227,8 +260,37 @@ export const DevelopersPage = () => {
             </Table>
           </Section>
 
+          <Section id="convert" title="格式转换">
+            <Prose>
+              上传时带 convert 字段即可把静态图转成 png、jpeg、webp 或 avif。目标格式与原格式相同时按普通压缩处理，只计 1
+              次；不同则在压缩之外额外计 1 次。透明图转 JPEG 必须用 background 指定 #RRGGBB 背景色，否则任务失败并退回全部次数。动图（GIF、APNG、动态
+              WebP）暂不支持转换，只做保留动画的压缩。任务状态里的 target_format、output_format、quota_units 分别给出目标格式、实际产物格式与本次计次。
+            </Prose>
+            <CodeBlock label="转换示例">{convertSample(origin)}</CodeBlock>
+            <Table label="格式支持">
+              <thead>
+                <tr>
+                  <Th>格式</Th>
+                  <Th>输入</Th>
+                  <Th>转换目标</Th>
+                  <Th>说明</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {formatRows.map((row) => (
+                  <tr key={row.format}>
+                    <Td className="whitespace-nowrap font-mono">{row.format}</Td>
+                    <Td className="whitespace-nowrap">{row.input}</Td>
+                    <Td className="whitespace-nowrap">{row.output}</Td>
+                    <Td className="text-ink-secondary">{row.note}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </Section>
+
           <Section id="quota" title="额度与错误">
-            <Prose>每个响应都带三个额度头，扣次发生在任务成功完成时，失败自动退回。</Prose>
+            <Prose>每个响应都带三个额度头，扣次发生在任务成功完成时，失败自动退回；格式转换额外计 1 次。</Prose>
             <CodeBlock tone="panel" label="额度响应头">
               {quotaHeadersSample}
             </CodeBlock>

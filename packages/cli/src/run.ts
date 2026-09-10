@@ -51,6 +51,8 @@ export const run = async (argv: string[], options: RunOptions = {}): Promise<num
           inPlace: parsed.inPlace,
           recursive: parsed.recursive,
           concurrency: parsed.concurrency,
+          convert: parsed.convert,
+          background: parsed.background,
         })
     }
     return 1

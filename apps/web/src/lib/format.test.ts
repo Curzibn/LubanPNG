@@ -9,8 +9,26 @@ import {
   formatSizePair,
   formatUnixRelative,
   maskedKey,
+  outputFileName,
+  replaceExtension,
   savingsPercent,
 } from "./format.ts"
+
+describe("outputFileName", () => {
+  it("swaps the extension when the product format differs", () => {
+    expect(outputFileName("hero.png", "webp")).toBe("hero.webp")
+    expect(outputFileName("scan.PNG", "jpeg")).toBe("scan.jpg")
+    expect(outputFileName("archive.tar.gif", "avif")).toBe("archive.tar.avif")
+    expect(replaceExtension("noext", "png")).toBe("noext.png")
+  })
+
+  it("keeps the original name when the family matches or the format is unknown", () => {
+    expect(outputFileName("photo.jpeg", "jpeg")).toBe("photo.jpeg")
+    expect(outputFileName("photo.JPG", "jpeg")).toBe("photo.JPG")
+    expect(outputFileName("photo.png", null)).toBe("photo.png")
+    expect(outputFileName("photo.png", "bmp")).toBe("photo.png")
+  })
+})
 
 describe("formatBytes", () => {
   it("shows megabytes with two decimals", () => {

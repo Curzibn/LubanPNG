@@ -25,6 +25,8 @@ describe("parseArgv", () => {
       inPlace: false,
       recursive: true,
       concurrency: DEFAULT_CONCURRENCY,
+      convert: undefined,
+      background: undefined,
     })
   })
 
@@ -37,7 +39,24 @@ describe("parseArgv", () => {
       inPlace: false,
       recursive: false,
       concurrency: 8,
+      convert: undefined,
+      background: undefined,
     })
+  })
+
+  it("parses conversion targets and background colours", () => {
+    const webp = parseArgv(["compress", "a.png", "--convert", "WebP"])
+    expect(webp.command === "compress" && webp.convert).toBe("webp")
+    const jpeg = parseArgv(["compress", "a.png", "--convert=jpg", "--background", "FFcc00"])
+    expect(jpeg.command === "compress" && jpeg.convert).toBe("jpeg")
+    expect(jpeg.command === "compress" && jpeg.background).toBe("#ffcc00")
+  })
+
+  it("rejects invalid or conflicting conversion options", () => {
+    expect(() => parseArgv(["compress", "a.png", "--convert", "gif"])).toThrow(/只支持 png、jpeg、webp、avif/)
+    expect(() => parseArgv(["compress", "a.png", "--convert", "jpeg", "--background", "white"])).toThrow(/#RRGGBB/)
+    expect(() => parseArgv(["compress", "a.png", "--convert", "webp", "--in-place"])).toThrow(/不能与 --convert/)
+    expect(() => parseArgv(["compress", "a.png", "--background", "#ffffff"])).toThrow(/需要与 --convert/)
   })
 
   it("treats tokens after -- as paths", () => {

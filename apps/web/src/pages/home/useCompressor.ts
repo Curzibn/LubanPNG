@@ -3,14 +3,19 @@ import { ErrorCode, errorMessage, fetchTask, isApiError, uploadImage } from "../
 import { createUploadQueue } from "../../lib/uploadQueue.ts"
 import { useSession } from "../../session/sessionContext.ts"
 import {
+  CONVERSION_EXTRA_UNITS,
+  JPEG_FLATTEN_BACKGROUND,
   MAX_BATCH_FILES,
   MAX_POLLS_PER_TASK,
   POLL_WAIT_SECONDS,
   detectFormat,
+  effectiveTarget,
   summarize,
   validateFiles,
   type CompressionItem,
+  type OutputChoice,
   type RejectedFile,
+  type TargetFormat,
 } from "./compressorRules.ts"
 
 const QUOTA_EXHAUSTED_ERROR = "额度已用完"
@@ -25,6 +30,7 @@ export const useCompressor = () => {
   const [batchNotice, setBatchNotice] = useState<string | null>(null)
   const [quotaExhausted, setQuotaExhausted] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [output, setOutput] = useState<OutputChoice>("keep")
   const queueRef = useRef(createUploadQueue())
   const exhaustedRef = useRef(false)
 
@@ -45,7 +51,7 @@ export const useCompressor = () => {
   )
 
   const processFile = useCallback(
-    async (id: string, file: File) => {
+    async (id: string, file: File, target: TargetFormat | null) => {
       if (exhaustedRef.current) {
         markExhausted(id)
         return
@@ -53,6 +59,8 @@ export const useCompressor = () => {
       update(id, { stage: "uploading", uploadRatio: 0 })
       try {
         const upload = await uploadImage(file, {
+          convert: target,
+          background: target === "jpeg" ? JPEG_FLATTEN_BACKGROUND : null,
           onProgress: (ratio) => update(id, { uploadRatio: ratio }),
         })
         applyQuota(upload.quota)
@@ -66,6 +74,7 @@ export const useCompressor = () => {
               queuePosition: null,
               compressedSize: task.compressed_size,
               compressedUrl: task.compressed_url,
+              quotaUnits: task.quota_units,
             })
             return
           }
@@ -105,25 +114,31 @@ export const useCompressor = () => {
         setQuotaExhausted(true)
         return
       }
-      const fresh = validation.accepted.map((file): CompressionItem => ({
-        id: crypto.randomUUID(),
-        name: file.name,
-        format: detectFormat(file.name, file.type) ?? "PNG",
-        originalSize: file.size,
-        stage: "waiting",
-        uploadRatio: 0,
-        queuePosition: null,
-        compressedSize: null,
-        compressedUrl: null,
-        error: null,
-      }))
+      const fresh = validation.accepted.map((file): CompressionItem => {
+        const format = detectFormat(file.name, file.type) ?? "PNG"
+        const target = effectiveTarget(format, output)
+        return {
+          id: crypto.randomUUID(),
+          name: file.name,
+          format,
+          target,
+          quotaUnits: 1 + (target === null ? 0 : CONVERSION_EXTRA_UNITS),
+          originalSize: file.size,
+          stage: "waiting",
+          uploadRatio: 0,
+          queuePosition: null,
+          compressedSize: null,
+          compressedUrl: null,
+          error: null,
+        }
+      })
       setItems((current) => [...current, ...fresh])
       fresh.forEach((item, index) => {
         const file = validation.accepted[index]
-        if (file) void queueRef.current.enqueue(() => processFile(item.id, file))
+        if (file) void queueRef.current.enqueue(() => processFile(item.id, file, item.target))
       })
     },
-    [maxFileSize, processFile, remaining],
+    [maxFileSize, output, processFile, remaining],
   )
 
   const dismissNotices = useCallback(() => {
@@ -140,6 +155,8 @@ export const useCompressor = () => {
     quotaExhausted,
     summary,
     downloading,
+    output,
+    setOutput,
     setDownloading,
     addFiles,
     dismissNotices,

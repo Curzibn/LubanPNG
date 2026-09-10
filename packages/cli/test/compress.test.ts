@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest"
-import { collectFiles, compressCommand } from "../src/commands/compress.js"
+import { collectFiles, compressCommand, outputExtensionFor } from "../src/commands/compress.js"
 import type { Context } from "../src/context.js"
 import { UsageError } from "../src/errors.js"
 import type { Io } from "../src/io.js"
@@ -41,9 +41,16 @@ describe("collectFiles", () => {
     await mkdir(join(root, "images", "nested"), { recursive: true })
     await writeFile(join(root, "images", "a.png"), "a")
     await writeFile(join(root, "images", "nested", "b.JPG"), "b")
+    await writeFile(join(root, "images", "nested", "c.webp"), "c")
+    await writeFile(join(root, "images", "d.avif"), "d")
     await writeFile(join(root, "images", "notes.txt"), "n")
     const files = await collectFiles([join(root, "images")], true)
-    expect(files.map((file) => file.relative).sort()).toEqual(["a.png", join("nested", "b.JPG")])
+    expect(files.map((file) => file.relative).sort()).toEqual([
+      "a.png",
+      "d.avif",
+      join("nested", "b.JPG"),
+      join("nested", "c.webp"),
+    ])
   })
 
   it("rejects missing paths", async () => {
@@ -150,6 +157,36 @@ describe("compressCommand", () => {
         concurrency: 2,
       }),
     ).rejects.toThrow(/输出路径冲突/)
+  })
+
+  it("writes converted products with the target extension and reports them", async () => {
+    const output: string[] = []
+    const code = await compressCommand(context(output), {
+      paths: [join(root, "images", "photo.png")],
+      out: join(root, "dist"),
+      inPlace: false,
+      recursive: false,
+      concurrency: 1,
+      convert: "webp",
+    })
+    expect(code).toBe(0)
+    const saved = await readFile(join(root, "dist", "photo.webp"))
+    expect(Array.from(saved)).toEqual([9, 9])
+    const upload = server.requests.filter((request) => request.url === "/v1/images/compress").at(-1)
+    expect(upload?.body).toContain('name="convert"')
+    expect(upload?.body).toContain("webp")
+    const text = output.join("")
+    expect(text).toContain("→ photo.webp")
+    expect(text).toContain("1 张已转换")
+  })
+
+  it("keeps the source extension when the target is the same family", () => {
+    expect(outputExtensionFor("/tmp/a.png", "webp")).toBe(".webp")
+    expect(outputExtensionFor("/tmp/a.jpeg", "jpeg")).toBe(".jpeg")
+    expect(outputExtensionFor("/tmp/a.JPG", "jpeg")).toBe(".JPG")
+    expect(outputExtensionFor("/tmp/a.png", "png")).toBe(".png")
+    expect(outputExtensionFor("/tmp/a.png", null)).toBe(".png")
+    expect(outputExtensionFor("/tmp/a.gif", "avif")).toBe(".avif")
   })
 
   it("fails fast when no key is configured", async () => {

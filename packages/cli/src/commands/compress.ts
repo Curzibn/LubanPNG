@@ -6,12 +6,15 @@ import {
   type Quota,
   type TaskStatus,
 } from "../api.js"
+import type { TargetFormat } from "../args.js"
 import { API_KEY_ENV, resolveApiKey } from "../config.js"
 import type { Context } from "../context.js"
 import { UsageError } from "../errors.js"
 import { formatBytes, formatSavings, formatSizePair, periodNoun, savingsPercent } from "../format.js"
 
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif"])
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif"])
+const FORMAT_EXTENSIONS: Record<string, string> = { png: ".png", jpeg: ".jpg", gif: ".gif", webp: ".webp", avif: ".avif" }
+const SUPPORTED_FORMATS_LABEL = "PNG / JPEG / GIF / WebP / AVIF"
 const WAIT_SECONDS = 30
 const MAX_POLL_ROUNDS = 40
 const SIZE_COLUMN = 9
@@ -22,6 +25,8 @@ export type CompressOptions = {
   inPlace: boolean
   recursive: boolean
   concurrency: number
+  convert?: TargetFormat | undefined
+  background?: string | undefined
 }
 
 type Collected = { path: string; name: string; relative: string }
@@ -30,9 +35,24 @@ type FileOutcome = {
   file: Collected
   ok: boolean
   retained: boolean
+  converted: string | null
   originalSize: number
   compressedSize: number
   error: string | null
+}
+
+const sameFamily = (extension: string, format: string): boolean => {
+  const current = extension.toLowerCase()
+  const target = FORMAT_EXTENSIONS[format]
+  return target !== undefined && (current === target || (target === ".jpg" && current === ".jpeg"))
+}
+
+export const outputExtensionFor = (sourcePath: string, format: string | null | undefined): string => {
+  const current = extname(sourcePath)
+  if (!format) return current
+  const target = FORMAT_EXTENSIONS[format]
+  if (target === undefined || sameFamily(current, format)) return current
+  return target
 }
 
 const walk = async (
@@ -79,11 +99,17 @@ export const collectFiles = async (inputs: string[], recursive: boolean): Promis
   return collected
 }
 
-const outputPathFor = (file: Collected, options: CompressOptions): string => {
+const withExtension = (path: string, extension: string): string => {
+  const current = extname(path)
+  return `${path.slice(0, path.length - current.length)}${extension}`
+}
+
+const outputPathFor = (file: Collected, options: CompressOptions, format: string | null | undefined): string => {
   if (options.inPlace) return file.path
-  if (options.out !== undefined) return join(options.out, file.relative)
+  const extension = outputExtensionFor(file.path, format)
+  if (options.out !== undefined) return join(options.out, withExtension(file.relative, extension))
   const ext = extname(file.path)
-  return `${file.path.slice(0, file.path.length - ext.length)}.min${ext}`
+  return `${file.path.slice(0, file.path.length - ext.length)}.min${extension}`
 }
 
 const writeFileAtomic = async (target: string, bytes: Uint8Array): Promise<void> => {
@@ -100,7 +126,7 @@ const writeFileAtomic = async (target: string, bytes: Uint8Array): Promise<void>
 const assertNoTargetConflicts = (files: Collected[], options: CompressOptions): void => {
   const byTarget = new Map<string, string[]>()
   for (const file of files) {
-    const target = resolve(outputPathFor(file, options))
+    const target = resolve(outputPathFor(file, options, options.convert))
     const sources = byTarget.get(target)
     if (sources === undefined) {
       byTarget.set(target, [file.path])
@@ -162,7 +188,7 @@ export const compressCommand = async (
 
   const files = await collectFiles(options.paths, options.recursive)
   if (files.length === 0) {
-    throw new UsageError("没有找到可压缩的图片（支持 PNG / JPEG / GIF）")
+    throw new UsageError(`没有找到可压缩的图片（支持 ${SUPPORTED_FORMATS_LABEL}）`)
   }
   assertNoTargetConflicts(files, options)
 
@@ -181,32 +207,47 @@ export const compressCommand = async (
       return
     }
     const percent = savingsPercent(outcome.originalSize, outcome.compressedSize)
-    context.io.write(`  ${name}  ${original} → ${compressed}   ${formatSavings(percent)}\n`)
+    const converted = outcome.converted === null ? "" : `   → ${outcome.converted}`
+    context.io.write(`  ${name}  ${original} → ${compressed}   ${formatSavings(percent)}${converted}\n`)
   }
 
   const processOne = async (file: Collected): Promise<FileOutcome> => {
     const originalSize = (await stat(file.path)).size
+    const failure = (error: string): FileOutcome => ({
+      file,
+      ok: false,
+      retained: false,
+      converted: null,
+      originalSize,
+      compressedSize: 0,
+      error,
+    })
     try {
-      const upload = await client.uploadImage(file.path)
+      const upload = await client.uploadImage(file.path, {
+        convert: options.convert,
+        background: options.background,
+      })
       onQuota(upload.quota)
       const view = await waitForCompletion(client, upload.data.task_id, onQuota)
       if (view.status !== "completed" || view.compressed_url === null) {
-        return { file, ok: false, retained: false, originalSize, compressedSize: 0, error: view.error_msg ?? "压缩失败" }
+        return failure(view.error_msg ?? "压缩失败")
       }
       if (options.inPlace && view.compressed_size !== null && view.compressed_size >= originalSize) {
-        return { file, ok: true, retained: true, originalSize, compressedSize: view.compressed_size, error: null }
+        return { file, ok: true, retained: true, converted: null, originalSize, compressedSize: view.compressed_size, error: null }
       }
       const bytes = await client.download(view.compressed_url)
       const compressedSize = view.compressed_size ?? bytes.byteLength
       if (options.inPlace && compressedSize >= originalSize) {
-        return { file, ok: true, retained: true, originalSize, compressedSize, error: null }
+        return { file, ok: true, retained: true, converted: null, originalSize, compressedSize, error: null }
       }
-      const target = outputPathFor(file, options)
+      const outputFormat = view.output_format ?? options.convert ?? null
+      const target = outputPathFor(file, options, outputFormat)
       await mkdir(dirname(target), { recursive: true })
       await writeFileAtomic(target, bytes)
-      return { file, ok: true, retained: false, originalSize, compressedSize, error: null }
+      const converted = view.target_format === null || view.target_format === undefined ? null : basename(target)
+      return { file, ok: true, retained: false, converted, originalSize, compressedSize, error: null }
     } catch (error) {
-      return { file, ok: false, retained: false, originalSize, compressedSize: 0, error: describeError(error) }
+      return failure(describeError(error))
     }
   }
 
@@ -230,6 +271,8 @@ export const compressCommand = async (
     `节省 ${formatBytes(saved)}`,
     `${periodNoun(period)}剩余 ${remaining} 次`,
   ]
+  const converted = outcomes.filter((outcome) => outcome.converted !== null)
+  if (converted.length > 0) parts.push(`${converted.length} 张已转换`)
   if (retained.length > 0) parts.push(`${retained.length} 张无收益保留原图`)
   if (failed.length > 0) parts.push(`${failed.length} 张失败`)
   context.io.write(`  ${parts.join("，")}\n`)

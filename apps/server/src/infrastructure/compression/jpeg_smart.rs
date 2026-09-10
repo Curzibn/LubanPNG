@@ -123,17 +123,6 @@ pub fn decide_compression_strategy(
     }
 }
 
-pub fn calculate_ssim(original: &image::RgbImage, compressed: &image::RgbImage) -> Result<f64> {
-    use image_compare::rgb_hybrid_compare;
-
-    if original.width() != compressed.width() || original.height() != compressed.height() {
-        return Err(anyhow::anyhow!("图像尺寸不匹配"));
-    }
-
-    let similarity = rgb_hybrid_compare(original, compressed)?;
-    Ok(similarity.score)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,29 +196,4 @@ mod tests {
         assert_eq!(decision.target_quality, 85);
     }
 
-    #[test]
-    fn ssim_identical_images_score_one() {
-        let img = photo_like_image(64, 64).to_rgb8();
-        let score = calculate_ssim(&img, &img).unwrap();
-        assert!(
-            score > 0.999,
-            "identical images should score ~1.0, got {}",
-            score
-        );
-    }
-
-    #[test]
-    fn ssim_detects_degradation() {
-        let original = photo_like_image(64, 64).to_rgb8();
-        let mut degraded = original.clone();
-        for pixel in degraded.pixels_mut() {
-            pixel.0 = pixel.0.map(|c| c.saturating_sub(40));
-        }
-        let score = calculate_ssim(&original, &degraded).unwrap();
-        assert!(
-            score < 0.95,
-            "shifted image should score below 0.95, got {}",
-            score
-        );
-    }
 }

@@ -69,6 +69,9 @@ export type TaskRecord = {
   original_size: number
   compressed_size: number | null
   compressed_url: string | null
+  target_format: string | null
+  output_format: string | null
+  quota_units: number
   error_msg: string | null
   created_at: number
   completed_at: number | null
@@ -84,6 +87,9 @@ export type CompressTask = {
   original_size: number
   compressed_size: number | null
   compressed_url: string | null
+  target_format: string | null
+  output_format: string | null
+  quota_units: number
   error_msg: string | null
   created_at: number
   completed_at: number | null
@@ -256,6 +262,8 @@ export const fetchTask = (taskId: string, waitSeconds: number, signal?: AbortSig
   request<CompressTask>("GET", `/v1/images/compress/${encodeURIComponent(taskId)}?wait=${waitSeconds}`, { signal })
 
 export type UploadOptions = {
+  convert?: string | null
+  background?: string | null
   onProgress?: (ratio: number) => void
   signal?: AbortSignal
 }
@@ -281,6 +289,8 @@ export const uploadImage = (file: File, options: UploadOptions = {}): Promise<Ap
     xhr.onabort = () => reject(new DOMException("上传已取消", "AbortError"))
     options.signal?.addEventListener("abort", () => xhr.abort(), { once: true })
     const form = new FormData()
+    if (options.convert) form.append("convert", options.convert)
+    if (options.background) form.append("background", options.background)
     form.append("file", file, file.name)
     xhr.send(form)
   })

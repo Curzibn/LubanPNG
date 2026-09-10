@@ -1,3 +1,4 @@
+use crate::domain::compression::{Background, ConversionRequest, OutputFormat};
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
@@ -49,6 +50,9 @@ pub struct TaskRecord {
     pub output_key: Option<String>,
     pub error_msg: Option<String>,
     pub quota_period: String,
+    pub quota_units: i16,
+    pub target_format: Option<String>,
+    pub background: Option<String>,
     pub locked_by: Option<String>,
     pub locked_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
@@ -70,6 +74,28 @@ impl TaskRecord {
         self.status() == TaskStatus::Completed
             && self.output_key.is_some()
             && self.expires_at.map(|at| at > now).unwrap_or(false)
+    }
+
+    pub fn quota_units(&self) -> i32 {
+        i32::from(self.quota_units.max(1))
+    }
+
+    pub fn conversion(&self) -> Option<ConversionRequest> {
+        let target = OutputFormat::parse(self.target_format.as_deref()?)?;
+        let background = self.background.as_deref().and_then(Background::parse);
+        Some(ConversionRequest { target, background })
+    }
+
+    pub fn output_format(&self) -> Option<&'static str> {
+        let key = self.output_key.as_ref()?;
+        match key.rsplit_once('.')?.1 {
+            "png" => Some("png"),
+            "jpg" | "jpeg" => Some("jpeg"),
+            "gif" => Some("gif"),
+            "webp" => Some("webp"),
+            "avif" => Some("avif"),
+            _ => None,
+        }
     }
 
     pub fn download_filename(&self) -> Option<String> {

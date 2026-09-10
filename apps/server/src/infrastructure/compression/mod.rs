@@ -1,11 +1,20 @@
+pub mod apng;
+pub mod avif;
+pub mod convert;
 pub mod gif;
 pub mod jpeg;
 pub mod jpeg_smart;
 pub mod png;
 pub mod png_smart;
+pub mod probe;
+pub mod quality;
+pub mod quantize;
 pub mod strategy;
+pub mod webp;
 
+pub use avif::AvifCompressionStrategy;
 pub use gif::GifCompressionStrategy;
 pub use jpeg::JpegCompressionStrategy;
 pub use png::PngCompressionStrategy;
 pub use strategy::CompressionStrategy;
+pub use webp::WebpCompressionStrategy;

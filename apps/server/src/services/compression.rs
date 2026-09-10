@@ -1,7 +1,10 @@
 use crate::config::AppConfig;
+use crate::domain::compression::ConversionRequest;
 use crate::domain::subject::{Plan, Subject, SubjectKind};
 use crate::domain::task::{TaskRecord, TaskStatus};
 use crate::error::{AppError, AppResult};
+use crate::infrastructure::compression::convert::convert_image;
+use crate::infrastructure::compression::probe;
 use crate::infrastructure::compression::CompressionStrategy;
 use crate::infrastructure::storage::{content_type_for_extension, format_extension, ObjectStorage};
 use crate::repositories::identity_repository::IdentityRepository;
@@ -35,6 +38,12 @@ pub struct TaskStatusView {
     pub compressed_size: Option<u64>,
     #[schema(example = "/v1/images/download/550e8400-e29b-41d4-a716-446655440000.png")]
     pub compressed_url: Option<String>,
+    #[schema(example = "webp")]
+    pub target_format: Option<String>,
+    #[schema(example = "png")]
+    pub output_format: Option<String>,
+    #[schema(example = 1)]
+    pub quota_units: i32,
     pub error_msg: Option<String>,
     #[schema(example = 1691234567)]
     pub created_at: i64,
@@ -56,11 +65,28 @@ pub struct CompressionService {
     config: AppConfig,
 }
 
+pub const SUPPORTED_FORMATS_MESSAGE: &str = "只支持 PNG、JPEG、GIF、WebP、AVIF 图片";
+pub const HEIF_MESSAGE: &str = "暂不支持 HEIC/HEIF，请先在设备上导出为 JPEG 再上传";
+
 fn detect_format(data: &[u8]) -> AppResult<ImageFormat> {
-    match image::guess_format(data) {
-        Ok(format @ (ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::Gif)) => Ok(format),
-        _ => Err(AppError::validation("只支持 PNG、JPEG、GIF 图片")),
+    match probe::sniff_format(data) {
+        Some(
+            format @ (ImageFormat::Png
+            | ImageFormat::Jpeg
+            | ImageFormat::Gif
+            | ImageFormat::WebP
+            | ImageFormat::Avif),
+        ) => Ok(format),
+        _ if probe::is_heif(data) => Err(AppError::validation(HEIF_MESSAGE)),
+        _ => Err(AppError::validation(SUPPORTED_FORMATS_MESSAGE)),
     }
+}
+
+fn effective_conversion(
+    source: ImageFormat,
+    conversion: Option<ConversionRequest>,
+) -> Option<ConversionRequest> {
+    conversion.filter(|request| request.target.image_format() != source)
 }
 
 fn sanitize_name(name: &str) -> String {
@@ -108,6 +134,7 @@ impl CompressionService {
         subject: &Subject,
         data: Bytes,
         filename: &str,
+        conversion: Option<ConversionRequest>,
     ) -> AppResult<TaskRecord> {
         let size = data.len() as i64;
         if size == 0 {
@@ -120,9 +147,11 @@ impl CompressionService {
             ));
         }
         let format = detect_format(&data)?;
+        let conversion = effective_conversion(format, conversion);
+        let units = 1 + i32::from(conversion.is_some());
         let extension = format_extension(format);
         let task_id = Uuid::new_v4();
-        let snapshot = self.quota.reserve(subject, task_id).await?;
+        let snapshot = self.quota.reserve(subject, task_id, units).await?;
         let input_key = format!("uploads/{}{}", task_id, extension);
         let subject_type = subject.kind.as_str();
         if let Err(err) = self
@@ -136,7 +165,7 @@ impl CompressionService {
             .await
         {
             self.quota
-                .refund(subject_type, subject.id, &snapshot.period_key, task_id)
+                .refund(subject_type, subject.id, &snapshot.period_key, task_id, units)
                 .await?;
             return Err(err);
         }
@@ -151,13 +180,18 @@ impl CompressionService {
                 original_size: size,
                 input_key: input_key.clone(),
                 quota_period: snapshot.period_key.clone(),
+                quota_units: units as i16,
+                target_format: conversion.map(|request| request.target.as_str().to_string()),
+                background: conversion
+                    .and_then(|request| request.background)
+                    .map(|background| background.to_hex()),
             })
             .await;
         match created {
             Ok(record) => Ok(record),
             Err(err) => {
                 self.quota
-                    .refund(subject_type, subject.id, &snapshot.period_key, task_id)
+                    .refund(subject_type, subject.id, &snapshot.period_key, task_id, units)
                     .await?;
                 let _ = self.storage.delete(&input_key).await;
                 Err(err)
@@ -186,6 +220,9 @@ impl CompressionService {
             } else {
                 None
             },
+            target_format: task.target_format.clone(),
+            output_format: task.output_format().map(str::to_string),
+            quota_units: task.quota_units(),
             error_msg: task.error_msg.clone(),
             created_at: task.created_at.timestamp(),
             completed_at: task.completed_at.map(|t| t.timestamp()),
@@ -267,15 +304,17 @@ impl CompressionService {
     async fn run(&self, task: &TaskRecord) -> AppResult<()> {
         let input = self.storage.get(&task.input_key).await?;
         let format = detect_format(&input)?;
+        let conversion = effective_conversion(format, task.conversion());
         let strategy = self.strategy(format)?;
         let config = self.config.clone();
         self.tasks.set_progress(task.id, 30).await?;
 
         let compression_input = input.clone();
-        let result = tokio::task::spawn_blocking(move || {
-            tokio::runtime::Handle::try_current()
+        let result = tokio::task::spawn_blocking(move || match conversion {
+            Some(request) => convert_image(&compression_input, format, request, &config),
+            None => tokio::runtime::Handle::try_current()
                 .map_err(|_| AppError::compression("无法获取运行时句柄"))?
-                .block_on(strategy.compress(&compression_input, &config))
+                .block_on(strategy.compress(&compression_input, &config)),
         })
         .await
         .map_err(|e| AppError::compression(format!("任务执行失败: {}", e)))??;
@@ -284,7 +323,8 @@ impl CompressionService {
         let plan = self.plan_for_task(task).await?;
         let original_size = task.original_size.max(0);
         let compressed_size = result.data.len() as i64;
-        let (payload, stored_size, extension) = if compressed_size >= original_size {
+        let keep_original = conversion.is_none() && compressed_size >= original_size;
+        let (payload, stored_size, extension) = if keep_original {
             (input, original_size, format_extension(format))
         } else {
             (
@@ -312,6 +352,7 @@ impl CompressionService {
                 task.subject_id,
                 &task.quota_period,
                 task.id,
+                task.quota_units(),
             )
             .await?;
         let _ = self.storage.delete(&task.input_key).await;
@@ -331,6 +372,7 @@ impl CompressionService {
                     task.subject_id,
                     &task.quota_period,
                     task.id,
+                    task.quota_units(),
                 )
                 .await
             {

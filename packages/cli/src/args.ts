@@ -2,6 +2,9 @@ import { UsageError } from "./errors.js"
 
 export type Command = "login" | "logout" | "compress" | "usage"
 
+export const TARGET_FORMATS = ["png", "jpeg", "webp", "avif"] as const
+export type TargetFormat = (typeof TARGET_FORMATS)[number]
+
 export type ParsedCommand =
   | { command: "login"; apiBase: string | undefined }
   | { command: "logout"; apiBase: string | undefined }
@@ -14,6 +17,8 @@ export type ParsedCommand =
       inPlace: boolean
       recursive: boolean
       concurrency: number
+      convert: TargetFormat | undefined
+      background: string | undefined
     }
   | { command: "help" }
   | { command: "version" }
@@ -21,7 +26,7 @@ export type ParsedCommand =
 export const DEFAULT_CONCURRENCY = 4
 export const MAX_CONCURRENCY = 16
 
-const STRING_OPTIONS = new Set(["--api-base", "--out", "--concurrency"])
+const STRING_OPTIONS = new Set(["--api-base", "--out", "--concurrency", "--convert", "--background"])
 const BOOLEAN_OPTIONS = new Set(["--in-place", "--recursive", "--help", "-h", "--version", "-v"])
 
 const COMMANDS = new Set<Command>(["login", "logout", "compress", "usage"])
@@ -33,6 +38,21 @@ const readConcurrency = (raw: string): number => {
     throw new UsageError(`--concurrency 最大 ${MAX_CONCURRENCY}，收到：${raw}`)
   }
   return value
+}
+
+const readTarget = (raw: string): TargetFormat => {
+  const lowered = raw.trim().toLowerCase()
+  const normalized = lowered === "jpg" ? "jpeg" : lowered
+  if (!(TARGET_FORMATS as readonly string[]).includes(normalized)) {
+    throw new UsageError(`--convert 只支持 png、jpeg、webp、avif，收到：${raw}`)
+  }
+  return normalized as TargetFormat
+}
+
+const readBackground = (raw: string): string => {
+  const match = /^#?([0-9a-fA-F]{6})$/.exec(raw.trim())
+  if (!match) throw new UsageError(`--background 需要是 #RRGGBB 形式的颜色，收到：${raw}`)
+  return `#${(match[1] as string).toLowerCase()}`
 }
 
 export const parseArgv = (argv: string[]): ParsedCommand => {
@@ -89,8 +109,18 @@ export const parseArgv = (argv: string[]): ParsedCommand => {
     const inPlace = options.get("--in-place") === true
     const recursive = options.get("--recursive") === true
     const concurrency = options.get("--concurrency")
+    const convertRaw = options.get("--convert")
+    const backgroundRaw = options.get("--background")
     if (inPlace && outValue !== undefined) {
       throw new UsageError("--in-place 与 --out 不能同时使用")
+    }
+    const convert = typeof convertRaw === "string" ? readTarget(convertRaw) : undefined
+    const background = typeof backgroundRaw === "string" ? readBackground(backgroundRaw) : undefined
+    if (inPlace && convert !== undefined) {
+      throw new UsageError("--in-place 不能与 --convert 同时使用，转换结果请用 --out 或默认输出")
+    }
+    if (background !== undefined && convert === undefined) {
+      throw new UsageError("--background 需要与 --convert 一起使用")
     }
     const paths = positionals.slice(1)
     if (paths.length === 0) throw new UsageError("compress 至少需要一个文件或目录路径")
@@ -103,6 +133,8 @@ export const parseArgv = (argv: string[]): ParsedCommand => {
       recursive,
       concurrency:
         typeof concurrency === "string" ? readConcurrency(concurrency) : DEFAULT_CONCURRENCY,
+      convert,
+      background,
     }
   }
 

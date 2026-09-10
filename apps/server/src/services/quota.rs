@@ -64,7 +64,12 @@ impl QuotaService {
         Ok(self.snapshot_from(period_key, resets_at, row))
     }
 
-    pub async fn reserve(&self, subject: &Subject, task_id: Uuid) -> AppResult<QuotaSnapshot> {
+    pub async fn reserve(
+        &self,
+        subject: &Subject,
+        task_id: Uuid,
+        units: i32,
+    ) -> AppResult<QuotaSnapshot> {
         let (period_key, resets_at) = period_for(&subject.plan.period, Utc::now());
         self.repo
             .ensure_period(
@@ -76,7 +81,7 @@ impl QuotaService {
             .await?;
         match self
             .repo
-            .reserve(subject.kind.as_str(), subject.id, &period_key, task_id)
+            .reserve(subject.kind.as_str(), subject.id, &period_key, task_id, units)
             .await?
         {
             Some(row) => Ok(self.snapshot_from(period_key, resets_at, row)),
@@ -90,9 +95,10 @@ impl QuotaService {
         subject_id: Uuid,
         period_key: &str,
         task_id: Uuid,
+        units: i32,
     ) -> AppResult<()> {
         self.repo
-            .settle(subject_type, subject_id, period_key, task_id)
+            .settle(subject_type, subject_id, period_key, task_id, units)
             .await
     }
 
@@ -102,9 +108,10 @@ impl QuotaService {
         subject_id: Uuid,
         period_key: &str,
         task_id: Uuid,
+        units: i32,
     ) -> AppResult<()> {
         self.repo
-            .refund(subject_type, subject_id, period_key, task_id)
+            .refund(subject_type, subject_id, period_key, task_id, units)
             .await
     }
 }

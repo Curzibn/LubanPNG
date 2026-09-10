@@ -1,6 +1,8 @@
 use crate::config::PngSmartConfig;
+use crate::infrastructure::compression::quantize::{expand_to_rgba, quantize_image};
 use anyhow::Result;
-use image::{ColorType, DynamicImage};
+use image::{ColorType, DynamicImage, ImageFormat};
+use std::io::Cursor;
 
 pub fn should_use_imagequant(img: &DynamicImage, config: &PngSmartConfig) -> bool {
     if !config.enabled {
@@ -18,7 +20,7 @@ pub fn should_use_imagequant(img: &DynamicImage, config: &PngSmartConfig) -> boo
 pub fn optimize_with_oxipng(png_data: &[u8], level: u8) -> Result<Vec<u8>> {
     use oxipng::{optimize_from_memory, Options, StripChunks};
 
-    let mut options = Options::from_preset(level.min(6) as u8);
+    let mut options = Options::from_preset(level.min(6));
     options.strip = StripChunks::Safe;
 
     let optimized = optimize_from_memory(png_data, &options)
@@ -51,62 +53,25 @@ pub fn compress_png_smart(
     Ok(data_to_optimize)
 }
 
+pub fn encode_png_smart(
+    img: DynamicImage,
+    config: &PngSmartConfig,
+    min_quality: u8,
+    max_quality: u8,
+) -> Result<Vec<u8>> {
+    let mut baseline = Vec::new();
+    img.write_to(&mut Cursor::new(&mut baseline), ImageFormat::Png)?;
+    compress_png_smart(img, baseline, config, min_quality, max_quality)
+}
+
 fn try_imagequant(img: &DynamicImage, min_quality: u8, max_quality: u8) -> Result<Vec<u8>> {
-    use image::{DynamicImage, ImageFormat};
-    use std::io::Cursor;
-
     let rgba = img.to_rgba8();
-    let raw_data = rgba.as_raw();
-    let pixels: Vec<imagequant::RGBA> = raw_data
-        .chunks_exact(4)
-        .map(|chunk| imagequant::RGBA {
-            r: chunk[0],
-            g: chunk[1],
-            b: chunk[2],
-            a: chunk[3],
-        })
-        .collect();
-
-    let mut liq = imagequant::new();
-    liq.set_quality(min_quality, max_quality)
-        .map_err(|e| anyhow::anyhow!("设置质量失败: {}", e))?;
-
-    let mut img_liq = liq
-        .new_image(
-            pixels.into_boxed_slice(),
-            rgba.width() as usize,
-            rgba.height() as usize,
-            0.0,
-        )
-        .map_err(|e| anyhow::anyhow!("创建图像失败: {}", e))?;
-
-    let mut res = liq
-        .quantize(&mut img_liq)
-        .map_err(|e| anyhow::anyhow!("量化失败: {}", e))?;
-
-    res.set_dithering_level(1.0)
-        .map_err(|e| anyhow::anyhow!("设置抖动失败: {}", e))?;
-
-    let (palette, pixels) = res
-        .remapped(&mut img_liq)
-        .map_err(|e| anyhow::anyhow!("重映射失败: {}", e))?;
-
-    let mut indexed_data = Vec::new();
-    for pixel in pixels.iter() {
-        let color = palette[*pixel as usize];
-        indexed_data.push(color.r);
-        indexed_data.push(color.g);
-        indexed_data.push(color.b);
-        indexed_data.push(color.a);
-    }
-
-    let quantized_img = DynamicImage::ImageRgba8(
-        image::RgbaImage::from_raw(rgba.width(), rgba.height(), indexed_data)
-            .ok_or_else(|| anyhow::anyhow!("创建图像失败"))?,
-    );
+    let (palette, indices) = quantize_image(&rgba, min_quality, max_quality, 1.0)?;
+    let quantized = expand_to_rgba(&palette, &indices, rgba.width(), rgba.height())
+        .ok_or_else(|| anyhow::anyhow!("创建图像失败"))?;
 
     let mut data = Vec::new();
-    quantized_img
+    DynamicImage::ImageRgba8(quantized)
         .write_to(&mut Cursor::new(&mut data), ImageFormat::Png)
         .map_err(|e| anyhow::anyhow!("PNG编码失败: {}", e))?;
 
@@ -116,7 +81,7 @@ fn try_imagequant(img: &DynamicImage, min_quality: u8, max_quality: u8) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{DynamicImage, RgbaImage};
+    use image::{DynamicImage, GenericImageView, RgbaImage};
 
     fn gradient_image(w: u32, h: u32) -> DynamicImage {
         let mut img = RgbaImage::new(w, h);
@@ -190,5 +155,15 @@ mod tests {
         };
         let compressed = compress_png_smart(img, original.clone(), &config, 70, 100).unwrap();
         assert!(compressed.len() < original.len());
+    }
+
+    #[test]
+    fn encode_from_decoded_image_produces_png() {
+        let img = gradient_image(64, 64);
+        let config = crate::config::PngSmartConfig::default();
+        let encoded = encode_png_smart(img, &config, 70, 100).unwrap();
+        assert_eq!(&encoded[1..4], b"PNG");
+        let decoded = image::load_from_memory(&encoded).unwrap();
+        assert_eq!(decoded.dimensions(), (64, 64));
     }
 }

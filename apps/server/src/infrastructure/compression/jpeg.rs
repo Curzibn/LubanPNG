@@ -1,12 +1,13 @@
-use crate::config::AppConfig;
+use crate::config::{AppConfig, JpegSmartConfig};
 use crate::domain::compression::CompressionResult;
 use crate::error::AppResult;
 use crate::infrastructure::compression::jpeg_smart::{
-    calculate_ssim, decide_compression_strategy, estimate_jpeg_quality,
+    decide_compression_strategy, estimate_jpeg_quality,
 };
+use crate::infrastructure::compression::quality::meets_floor;
 use crate::infrastructure::compression::CompressionStrategy;
 use async_trait::async_trait;
-use image::ImageFormat;
+use image::{ImageFormat, RgbImage};
 use mozjpeg::{ColorSpace, Compress};
 use std::panic;
 
@@ -28,45 +29,34 @@ impl CompressionStrategy for JpegCompressionStrategy {
             return Ok(CompressionResult::new(input.to_vec(), ImageFormat::Jpeg));
         }
 
-        let img = image::load_from_memory(input)?;
-        let rgb = img.to_rgb8();
-        let width = rgb.width() as usize;
-        let height = rgb.height() as usize;
-        let rgb_data = rgb.as_raw();
-        let target_quality = decision.target_quality;
-
-        let compressed_data = compress_jpeg_with_quality(rgb_data, width, height, target_quality)?;
-
-        if let Some(min_ssim) = config.jpeg_smart.min_ssim_score {
-            if let Ok(compressed_img) = image::load_from_memory(&compressed_data) {
-                let compressed_rgb = compressed_img.to_rgb8();
-
-                if compressed_rgb.width() == rgb.width() && compressed_rgb.height() == rgb.height()
-                {
-                    match calculate_ssim(&rgb, &compressed_rgb) {
-                        Ok(ssim_score) => {
-                            if ssim_score < min_ssim {
-                                let higher_quality = (target_quality as f32 * 1.1)
-                                    .min(config.imagequant.max_quality as f32)
-                                    as u8;
-
-                                let retry_data = compress_jpeg_with_quality(
-                                    rgb_data,
-                                    width,
-                                    height,
-                                    higher_quality,
-                                )?;
-                                return Ok(CompressionResult::new(retry_data, ImageFormat::Jpeg));
-                            }
-                        }
-                        Err(_) => {}
-                    }
-                }
-            }
-        }
-
-        Ok(CompressionResult::new(compressed_data, ImageFormat::Jpeg))
+        let rgb = image::load_from_memory(input)?.to_rgb8();
+        let data = encode_jpeg_smart(
+            &rgb,
+            decision.target_quality,
+            &config.jpeg_smart,
+            config.imagequant.max_quality,
+        )?;
+        Ok(CompressionResult::new(data, ImageFormat::Jpeg))
     }
+}
+
+pub fn encode_jpeg_smart(
+    rgb: &RgbImage,
+    target_quality: u8,
+    config: &JpegSmartConfig,
+    max_quality: u8,
+) -> AppResult<Vec<u8>> {
+    let width = rgb.width() as usize;
+    let height = rgb.height() as usize;
+    let compressed = compress_jpeg_with_quality(rgb.as_raw(), width, height, target_quality)?;
+    let Some(min_ssim) = config.min_ssim_score else {
+        return Ok(compressed);
+    };
+    if meets_floor(rgb, &compressed, min_ssim) {
+        return Ok(compressed);
+    }
+    let higher_quality = (target_quality as f32 * 1.1).min(max_quality as f32) as u8;
+    compress_jpeg_with_quality(rgb.as_raw(), width, height, higher_quality)
 }
 
 fn compress_jpeg_with_quality(
@@ -100,7 +90,7 @@ fn compress_jpeg_with_quality(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{DynamicImage, RgbImage};
+    use image::{DynamicImage, GenericImageView, RgbImage};
 
     fn photo_like_image(w: u32, h: u32) -> DynamicImage {
         let mut img = RgbImage::new(w, h);
@@ -143,5 +133,14 @@ mod tests {
             result.data.len(),
             original.len()
         );
+    }
+
+    #[test]
+    fn smart_encoder_writes_a_decodable_jpeg() {
+        let rgb = photo_like_image(64, 64).to_rgb8();
+        let config = crate::config::JpegSmartConfig::default();
+        let data = encode_jpeg_smart(&rgb, 80, &config, 100).unwrap();
+        assert_eq!(&data[..2], &[0xFF, 0xD8]);
+        assert_eq!(image::load_from_memory(&data).unwrap().dimensions(), (64, 64));
     }
 }

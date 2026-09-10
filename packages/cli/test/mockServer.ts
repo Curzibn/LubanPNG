@@ -46,8 +46,16 @@ const meBody = {
   },
 }
 
+const convertField = (body: string): string | null => {
+  const match = /name="convert"\r\n\r\n([^\r]+)\r\n/.exec(body)
+  return match?.[1] ?? null
+}
+
+const extensionFor = (format: string | null): string => (format === "jpeg" ? "jpg" : format ?? "png")
+
 export const startMockServer = async (compressedBytes: Uint8Array): Promise<MockServer> => {
   const requests: RecordedRequest[] = []
+  let lastConvert: string | null = null
   const server = createServer(async (req, res) => {
     const chunks: Buffer[] = []
     for await (const chunk of req) chunks.push(Buffer.from(chunk as Uint8Array))
@@ -83,6 +91,7 @@ export const startMockServer = async (compressedBytes: Uint8Array): Promise<Mock
     }
 
     if (url.pathname === "/v1/images/compress" && req.method === "POST") {
+      lastConvert = convertField(requests.at(-1)?.body ?? "")
       sendJson(200, { code: 0, msg: "success", data: { task_id: "task-1" } })
       return
     }
@@ -99,7 +108,10 @@ export const startMockServer = async (compressedBytes: Uint8Array): Promise<Mock
           original_name: "photo.png",
           original_size: 4,
           compressed_size: compressedBytes.byteLength,
-          compressed_url: "/v1/images/download/compressed_photo.png",
+          compressed_url: `/v1/images/download/compressed_photo.${extensionFor(lastConvert)}`,
+          target_format: lastConvert,
+          output_format: lastConvert ?? "png",
+          quota_units: lastConvert === null ? 1 : 2,
           error_msg: null,
           created_at: 1_760_000_000,
           completed_at: 1_760_000_001,

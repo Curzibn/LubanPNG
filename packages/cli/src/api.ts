@@ -46,6 +46,8 @@ export type Me = {
 
 export type UploadResult = { task_id: string }
 
+export type UploadOptions = { convert?: string | undefined; background?: string | undefined }
+
 export type TaskStatus = {
   task_id: string
   status: "pending" | "processing" | "completed" | "failed"
@@ -55,6 +57,9 @@ export type TaskStatus = {
   original_size: number
   compressed_size: number | null
   compressed_url: string | null
+  target_format: string | null
+  output_format: string | null
+  quota_units: number
   error_msg: string | null
   created_at: number
   completed_at: number | null
@@ -155,9 +160,15 @@ export class ApiClient {
     return this.request<Me>("GET", "/v1/me", { signal })
   }
 
-  async uploadImage(filePath: string, signal?: AbortSignal): Promise<ApiResult<UploadResult>> {
+  async uploadImage(
+    filePath: string,
+    options: UploadOptions = {},
+    signal?: AbortSignal,
+  ): Promise<ApiResult<UploadResult>> {
     const data = await readFile(filePath)
     const form = new FormData()
+    if (options.convert !== undefined) form.append("convert", options.convert)
+    if (options.background !== undefined) form.append("background", options.background)
     form.append("file", new Blob([new Uint8Array(data)]), basename(filePath))
     return this.request<UploadResult>("POST", "/v1/images/compress", { formData: form, signal })
   }

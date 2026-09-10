@@ -106,3 +106,25 @@ export const formatShortDate = (iso: string, timeZone?: string): string => {
 }
 
 export const maskedKey = (prefix: string, suffix: string): string => `${prefix}…${suffix}`
+
+const outputExtensions: Record<string, string> = { png: "png", jpeg: "jpg", gif: "gif", webp: "webp", avif: "avif" }
+
+const currentExtension = (name: string): string => {
+  const dot = name.lastIndexOf(".")
+  return dot > 0 ? name.slice(dot + 1).toLowerCase() : ""
+}
+
+export const replaceExtension = (name: string, extension: string): string => {
+  const dot = name.lastIndexOf(".")
+  const stem = dot > 0 ? name.slice(0, dot) : name
+  return `${stem}.${extension}`
+}
+
+export const outputFileName = (originalName: string, outputFormat: string | null | undefined): string => {
+  if (!outputFormat) return originalName
+  const extension = outputExtensions[outputFormat]
+  if (extension === undefined) return originalName
+  const current = currentExtension(originalName)
+  const sameFamily = current === extension || (extension === "jpg" && current === "jpeg")
+  return sameFamily ? originalName : replaceExtension(originalName, extension)
+}

@@ -76,28 +76,32 @@ impl QuotaRepository {
         subject_id: Uuid,
         period_key: &str,
         task_id: Uuid,
+        units: i32,
     ) -> AppResult<Option<BalanceRow>> {
+        let units = units.max(1);
         let mut tx = self.pool.begin().await?;
         let row = sqlx::query_as::<_, BalanceRow>(
-            "UPDATE quota_balances SET held = held + 1
+            "UPDATE quota_balances SET held = held + $4
              WHERE subject_type = $1 AND subject_id = $2 AND period_key = $3
-               AND granted + purchased - used - held >= 1
+               AND granted + purchased - used - held >= $4
              RETURNING granted, purchased, used, held",
         )
         .bind(subject_type)
         .bind(subject_id)
         .bind(period_key)
+        .bind(units)
         .fetch_optional(&mut *tx)
         .await?;
         if row.is_some() {
             sqlx::query(
                 "INSERT INTO quota_ledger (subject_type, subject_id, kind, delta, period_key, task_id)
-                 VALUES ($1, $2, 'reserve', -1, $3, $4)",
+                 VALUES ($1, $2, 'reserve', $5, $3, $4)",
             )
             .bind(subject_type)
             .bind(subject_id)
             .bind(period_key)
             .bind(task_id)
+            .bind(-units)
             .execute(&mut *tx)
             .await?;
         }
@@ -111,15 +115,18 @@ impl QuotaRepository {
         subject_id: Uuid,
         period_key: &str,
         task_id: Uuid,
+        units: i32,
     ) -> AppResult<()> {
+        let units = units.max(1);
         let mut tx = self.pool.begin().await?;
         sqlx::query(
-            "UPDATE quota_balances SET held = greatest(held - 1, 0), used = used + 1
+            "UPDATE quota_balances SET held = greatest(held - $4, 0), used = used + $4
              WHERE subject_type = $1 AND subject_id = $2 AND period_key = $3",
         )
         .bind(subject_type)
         .bind(subject_id)
         .bind(period_key)
+        .bind(units)
         .execute(&mut *tx)
         .await?;
         sqlx::query(
@@ -142,25 +149,29 @@ impl QuotaRepository {
         subject_id: Uuid,
         period_key: &str,
         task_id: Uuid,
+        units: i32,
     ) -> AppResult<()> {
+        let units = units.max(1);
         let mut tx = self.pool.begin().await?;
         sqlx::query(
-            "UPDATE quota_balances SET held = greatest(held - 1, 0)
+            "UPDATE quota_balances SET held = greatest(held - $4, 0)
              WHERE subject_type = $1 AND subject_id = $2 AND period_key = $3",
         )
         .bind(subject_type)
         .bind(subject_id)
         .bind(period_key)
+        .bind(units)
         .execute(&mut *tx)
         .await?;
         sqlx::query(
             "INSERT INTO quota_ledger (subject_type, subject_id, kind, delta, period_key, task_id)
-             VALUES ($1, $2, 'refund', 1, $3, $4)",
+             VALUES ($1, $2, 'refund', $5, $3, $4)",
         )
         .bind(subject_type)
         .bind(subject_id)
         .bind(period_key)
         .bind(task_id)
+        .bind(units)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;

@@ -2,7 +2,8 @@ use crate::config::AppConfig;
 use crate::error::AppError;
 use crate::handlers;
 use crate::infrastructure::compression::{
-    CompressionStrategy, GifCompressionStrategy, JpegCompressionStrategy, PngCompressionStrategy,
+    AvifCompressionStrategy, CompressionStrategy, GifCompressionStrategy, JpegCompressionStrategy,
+    PngCompressionStrategy, WebpCompressionStrategy,
 };
 use crate::infrastructure::mail::Mailer;
 use crate::infrastructure::storage::ObjectStorage;
@@ -67,6 +68,8 @@ pub fn build_state(
     strategies.insert(ImageFormat::Png, Arc::new(PngCompressionStrategy));
     strategies.insert(ImageFormat::Jpeg, Arc::new(JpegCompressionStrategy));
     strategies.insert(ImageFormat::Gif, Arc::new(GifCompressionStrategy));
+    strategies.insert(ImageFormat::WebP, Arc::new(WebpCompressionStrategy));
+    strategies.insert(ImageFormat::Avif, Arc::new(AvifCompressionStrategy));
 
     let compression = Arc::new(CompressionService::new(
         tasks.clone(),

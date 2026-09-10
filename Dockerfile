@@ -8,18 +8,18 @@ RUN pnpm install --frozen-lockfile
 COPY apps/web apps/web
 RUN pnpm build
 
-FROM rust:1-bookworm AS server
+FROM rust:1-trixie AS server
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends cmake nasm pkg-config \
+    && apt-get install -y --no-install-recommends cmake nasm pkg-config libdav1d-dev \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY apps/server apps/server
 RUN cargo build --release -p lubanpng
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates libdav1d7 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=server /src/target/release/lubanpng /app/lubanpng

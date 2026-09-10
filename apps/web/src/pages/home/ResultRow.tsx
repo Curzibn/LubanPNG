@@ -1,7 +1,7 @@
 import { DownloadIcon } from "../../components/icons.tsx"
 import { cx } from "../../lib/cx.ts"
 import { compressedRatioPercent, formatBytes, formatSavings, formatSizePair, savingsPercent } from "../../lib/format.ts"
-import type { CompressionItem } from "./compressorRules.ts"
+import { outputNameFor, targetLabel, type CompressionItem } from "./compressorRules.ts"
 
 const pillClass =
   "inline-flex items-center whitespace-nowrap rounded-pill px-2.25 py-0.75 font-mono text-label-sm font-semibold md:px-2.5 md:py-1 md:text-label"
@@ -74,8 +74,13 @@ export const ResultRow = ({ item }: { item: CompressionItem }) => {
       <div className="area-thumb hidden size-12 items-end justify-center rounded-control bg-hairline md:flex" aria-hidden="true">
         <span className="pb-1 font-mono text-label-2xs text-ink">{item.format}</span>
       </div>
-      <p className="area-name min-w-0 truncate font-mono text-label text-ink md:text-ui" title={item.name}>
-        {item.name}
+      <p className="area-name flex min-w-0 items-center gap-2 font-mono text-label text-ink md:text-ui" title={item.name}>
+        <span className="min-w-0 truncate">{item.name}</span>
+        {item.target && (
+          <span className="shrink-0 rounded-mark bg-panel px-1.5 py-0.5 text-label-2xs font-semibold text-ink-secondary">
+            → {targetLabel(item.target)}
+          </span>
+        )}
       </p>
       <p className="area-sizes flex min-w-0 font-mono text-label text-ink-secondary tabular-nums md:text-ui">
         <Sizes item={item} />
@@ -90,8 +95,8 @@ export const ResultRow = ({ item }: { item: CompressionItem }) => {
       {downloadable ? (
         <a
           href={item.compressedUrl ?? undefined}
-          download={item.name}
-          aria-label={`下载 ${item.name}`}
+          download={outputNameFor(item)}
+          aria-label={`下载 ${outputNameFor(item)}`}
           className="area-download flex size-11 items-center justify-center justify-self-end rounded-control text-ink transition-colors hover:bg-panel"
         >
           <DownloadIcon className="size-5" />

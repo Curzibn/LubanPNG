@@ -100,7 +100,7 @@ export const Dropzone = ({
             最多 {MAX_BATCH_FILES} 张{sizeHint}
           </span>
           <span className="hidden md:inline">
-            单次最多 {MAX_BATCH_FILES} 张{sizeHint} · PNG / JPEG / GIF
+            单次最多 {MAX_BATCH_FILES} 张{sizeHint} · PNG / JPEG / GIF / WebP / AVIF
           </span>
         </p>
         <Button variant="ink" size="xl" onClick={openPicker} className="mt-1.5 w-full rounded-tile text-ui-lg md:hidden">

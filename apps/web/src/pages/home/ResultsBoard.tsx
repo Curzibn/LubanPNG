@@ -12,6 +12,9 @@ const Headline = ({ summary }: { summary: BatchSummary }) => {
         本次 {summary.total} 张 · <span className="hidden md:inline">共</span>节省{" "}
         <span className="font-mono font-semibold text-jade">{formatBytes(summary.savedBytes)}</span>
         <span className="hidden text-ink-secondary md:inline">（-{percent}%）</span>
+        {summary.quotaUnits > summary.completed && (
+          <span className="text-ink-secondary"> · 含转换计 {summary.quotaUnits} 次</span>
+        )}
       </p>
     )
   }

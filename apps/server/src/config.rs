@@ -7,6 +7,8 @@ pub struct AppConfig {
     pub imagequant: ImageQuantConfig,
     pub jpeg_smart: JpegSmartConfig,
     pub png_smart: PngSmartConfig,
+    pub webp_smart: WebpSmartConfig,
+    pub avif_smart: AvifSmartConfig,
     pub database: DatabaseConfig,
     pub storage: StorageConfig,
     pub auth: AuthConfig,
@@ -79,7 +81,6 @@ impl Default for JpegSmartConfig {
 #[serde(default)]
 pub struct PngSmartConfig {
     pub enabled: bool,
-    pub skip_palette: bool,
     pub use_oxipng: bool,
     pub oxipng_level: u8,
 }
@@ -88,9 +89,44 @@ impl Default for PngSmartConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            skip_palette: true,
             use_oxipng: true,
             oxipng_level: 4,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WebpSmartConfig {
+    pub quality: u8,
+    pub method: u8,
+    pub min_ssim_score: Option<f64>,
+}
+
+impl Default for WebpSmartConfig {
+    fn default() -> Self {
+        Self {
+            quality: 80,
+            method: 4,
+            min_ssim_score: Some(0.90),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AvifSmartConfig {
+    pub quality: u8,
+    pub speed: u8,
+    pub min_ssim_score: Option<f64>,
+}
+
+impl Default for AvifSmartConfig {
+    fn default() -> Self {
+        Self {
+            quality: 60,
+            speed: 8,
+            min_ssim_score: Some(0.90),
         }
     }
 }

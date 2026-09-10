@@ -13,6 +13,9 @@ pub struct NewTask {
     pub original_size: i64,
     pub input_key: String,
     pub quota_period: String,
+    pub quota_units: i16,
+    pub target_format: Option<String>,
+    pub background: Option<String>,
 }
 
 pub struct TaskRepository {
@@ -26,8 +29,8 @@ impl TaskRepository {
 
     pub async fn create(&self, task: NewTask) -> AppResult<TaskRecord> {
         let record = sqlx::query_as::<_, TaskRecord>(
-            "INSERT INTO tasks (id, subject_type, subject_id, source, status, original_name, original_size, input_key, quota_period)
-             VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7, $8)
+            "INSERT INTO tasks (id, subject_type, subject_id, source, status, original_name, original_size, input_key, quota_period, quota_units, target_format, background)
+             VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7, $8, $9, $10, $11)
              RETURNING *",
         )
         .bind(task.id)
@@ -38,6 +41,9 @@ impl TaskRepository {
         .bind(task.original_size)
         .bind(&task.input_key)
         .bind(&task.quota_period)
+        .bind(task.quota_units)
+        .bind(&task.target_format)
+        .bind(&task.background)
         .fetch_one(&self.pool)
         .await?;
         Ok(record)
