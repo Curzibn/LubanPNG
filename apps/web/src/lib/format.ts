@@ -1,3 +1,5 @@
+import type { Locale } from "../i18n/locale.ts"
+
 const KIB = 1024
 const MIB = KIB * KIB
 
@@ -68,18 +70,22 @@ const partsIn = (date: Date, timeZone: string | undefined): DateParts => {
   }
 }
 
+const monthShortIn = (date: Date, timeZone: string | undefined): string =>
+  new Intl.DateTimeFormat("en-US", { timeZone, month: "short" }).format(date)
+
 const dayKey = (parts: DateParts): string => `${parts.year}-${parts.month}-${parts.day}`
 
-export const formatResetTime = (iso: string, timeZone: string = SHANGHAI): string => {
+export const formatResetTime = (iso: string, locale: Locale, timeZone: string = SHANGHAI): string => {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return ""
   const parts = partsIn(date, timeZone)
+  if (locale === "en") return `${monthShortIn(date, timeZone)} ${Number(parts.day)}, ${parts.hour}:${parts.minute}`
   return `${Number(parts.month)} 月 ${Number(parts.day)} 日 ${parts.hour}:${parts.minute}`
 }
 
 export type RelativeTimeOptions = { now?: Date; timeZone?: string }
 
-export const formatRelativeTime = (date: Date, options: RelativeTimeOptions = {}): string => {
+export const formatRelativeTime = (date: Date, locale: Locale, options: RelativeTimeOptions = {}): string => {
   if (Number.isNaN(date.getTime())) return ""
   const now = options.now ?? new Date()
   const parts = partsIn(date, options.timeZone)
@@ -87,21 +93,28 @@ export const formatRelativeTime = (date: Date, options: RelativeTimeOptions = {}
   const yesterday = dayKey(partsIn(new Date(now.getTime() - 24 * 60 * 60 * 1000), options.timeZone))
   const key = dayKey(parts)
   const clock = `${parts.hour}:${parts.minute}`
-  if (key === today) return `今天 ${clock}`
-  if (key === yesterday) return `昨天 ${clock}`
+  const sameDay = key === today ? "today" : key === yesterday ? "yesterday" : null
+  if (locale === "en") {
+    if (sameDay === "today") return `Today ${clock}`
+    if (sameDay === "yesterday") return `Yesterday ${clock}`
+    return `${monthShortIn(date, options.timeZone)} ${Number(parts.day)}, ${clock}`
+  }
+  if (sameDay === "today") return `今天 ${clock}`
+  if (sameDay === "yesterday") return `昨天 ${clock}`
   return `${parts.month}-${parts.day} ${clock}`
 }
 
-export const formatUnixRelative = (unixSeconds: number, options: RelativeTimeOptions = {}): string =>
-  formatRelativeTime(new Date(unixSeconds * 1000), options)
+export const formatUnixRelative = (unixSeconds: number, locale: Locale, options: RelativeTimeOptions = {}): string =>
+  formatRelativeTime(new Date(unixSeconds * 1000), locale, options)
 
-export const formatIsoRelative = (iso: string, options: RelativeTimeOptions = {}): string =>
-  formatRelativeTime(new Date(iso), options)
+export const formatIsoRelative = (iso: string, locale: Locale, options: RelativeTimeOptions = {}): string =>
+  formatRelativeTime(new Date(iso), locale, options)
 
-export const formatShortDate = (iso: string, timeZone?: string): string => {
+export const formatShortDate = (iso: string, locale: Locale, timeZone?: string): string => {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return ""
   const parts = partsIn(date, timeZone)
+  if (locale === "en") return `${monthShortIn(date, timeZone)} ${Number(parts.day)}`
   return `${parts.month}-${parts.day}`
 }
 

@@ -14,9 +14,9 @@ import { CopyIcon, PlusIcon } from "../../components/icons.tsx"
 import { Notice } from "../../components/Notice.tsx"
 import { Table, Td, Th } from "../../components/Table.tsx"
 import { TextField } from "../../components/TextField.tsx"
+import { useI18n } from "../../i18n/I18nProvider.tsx"
 import { formatIsoRelative, formatShortDate, maskedKey } from "../../lib/format.ts"
-
-const DEFAULT_KEY_NAME = "本机 CLI"
+import { planLabelKeys } from "./planLabels.ts"
 
 const copyToClipboard = async (text: string): Promise<boolean> => {
   try {
@@ -28,10 +28,11 @@ const copyToClipboard = async (text: string): Promise<boolean> => {
 }
 
 const CreatedKeyPanel = ({ created }: { created: CreatedApiKey }) => {
+  const { t } = useI18n()
   const [copied, setCopied] = useState(false)
   return (
     <div className="flex flex-col gap-2 rounded-control border-frame border-vermilion bg-vermilion-soft p-4">
-      <p className="text-label font-medium text-ink">「{created.name}」已创建。Key 只显示这一次，请立即复制保存。</p>
+      <p className="text-label font-medium text-ink">{t("keys.created", { name: created.name })}</p>
       <div className="flex flex-col gap-2 md:flex-row md:items-center">
         <code className="min-w-0 flex-1 break-all font-mono text-ui text-ink">{created.key}</code>
         <Button
@@ -42,7 +43,7 @@ const CreatedKeyPanel = ({ created }: { created: CreatedApiKey }) => {
           }}
         >
           <CopyIcon className="size-3.5" />
-          {copied ? "已复制" : "复制"}
+          {copied ? t("keys.copied") : t("keys.copy")}
         </Button>
       </div>
     </div>
@@ -50,10 +51,11 @@ const CreatedKeyPanel = ({ created }: { created: CreatedApiKey }) => {
 }
 
 export const ApiKeysCard = ({ plan }: { plan: Plan }) => {
+  const { locale, t } = useI18n()
   const [keys, setKeys] = useState<ApiKey[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
-  const [name, setName] = useState(DEFAULT_KEY_NAME)
+  const [name, setName] = useState(() => t("keys.defaultName"))
   const [submitting, setSubmitting] = useState(false)
   const [created, setCreated] = useState<CreatedApiKey | null>(null)
   const [revoking, setRevoking] = useState<string | null>(null)
@@ -63,9 +65,9 @@ export const ApiKeysCard = ({ plan }: { plan: Plan }) => {
       setKeys(await listApiKeys())
       setError(null)
     } catch (loadError) {
-      setError(errorMessage(loadError, "读取 API Key 失败"))
+      setError(errorMessage(loadError, t("keys.error.load")))
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     void load()
@@ -82,36 +84,36 @@ export const ApiKeysCard = ({ plan }: { plan: Plan }) => {
       const key = await createApiKey(trimmed)
       setCreated(key)
       setCreating(false)
-      setName(DEFAULT_KEY_NAME)
+      setName(t("keys.defaultName"))
       await load()
     } catch (createError) {
-      setError(errorMessage(createError, "创建失败"))
+      setError(errorMessage(createError, t("keys.error.create")))
     } finally {
       setSubmitting(false)
     }
   }
 
   const handleRevoke = async (key: ApiKey) => {
-    if (!window.confirm(`吊销「${key.name}」后，使用它的请求会立即失效。确定吊销？`)) return
+    if (!window.confirm(t("keys.revokeConfirm", { name: key.name }))) return
     setRevoking(key.id)
     try {
       await revokeApiKey(key.id)
       if (created?.id === key.id) setCreated(null)
       await load()
     } catch (revokeError) {
-      setError(errorMessage(revokeError, "吊销失败"))
+      setError(errorMessage(revokeError, t("keys.error.revoke")))
     } finally {
       setRevoking(null)
     }
   }
 
   return (
-    <section aria-label="API Key" className="flex flex-col gap-4.5 rounded-card border-thin border-hairline bg-surface p-5 md:p-7">
+    <section aria-label={t("keys.aria")} className="flex flex-col gap-4.5 rounded-card border-thin border-hairline bg-surface p-5 md:p-7">
       <div className="flex items-center justify-between gap-3">
         <Eyebrow>API KEY</Eyebrow>
         <Button variant="ink" size="xs" onClick={() => setCreating(true)} disabled={creating || atLimit || keys === null}>
           <PlusIcon className="size-3.5" />
-          新建 Key
+          {t("keys.new")}
         </Button>
       </div>
       {error && (
@@ -123,7 +125,7 @@ export const ApiKeysCard = ({ plan }: { plan: Plan }) => {
         <form onSubmit={handleCreate} className="flex flex-col gap-3 rounded-control border-thin border-hairline bg-panel p-4 md:flex-row md:items-end">
           <TextField
             id="api-key-name"
-            label="名称"
+            label={t("keys.name")}
             value={name}
             maxLength={40}
             autoFocus
@@ -133,24 +135,24 @@ export const ApiKeysCard = ({ plan }: { plan: Plan }) => {
           />
           <div className="flex gap-2">
             <Button type="submit" variant="ink" size="xl" disabled={submitting || name.trim() === ""}>
-              {submitting ? "创建中…" : "创建"}
+              {submitting ? t("keys.creating") : t("keys.create")}
             </Button>
             <Button variant="outline" size="xl" onClick={() => setCreating(false)} disabled={submitting}>
-              取消
+              {t("keys.cancel")}
             </Button>
           </div>
         </form>
       )}
       {created && <CreatedKeyPanel created={created} />}
-      <Table label="API Key 列表">
+      <Table label={t("keys.tableAria")}>
         <thead>
           <tr>
-            <Th>名称</Th>
-            <Th>Key</Th>
-            <Th>创建</Th>
-            <Th>最近使用</Th>
+            <Th>{t("keys.col.name")}</Th>
+            <Th>{t("keys.col.key")}</Th>
+            <Th>{t("keys.col.created")}</Th>
+            <Th>{t("keys.col.lastUsed")}</Th>
             <Th>
-              <span className="sr-only">操作</span>
+              <span className="sr-only">{t("keys.col.actions")}</span>
             </Th>
           </tr>
         </thead>
@@ -158,14 +160,14 @@ export const ApiKeysCard = ({ plan }: { plan: Plan }) => {
           {keys === null && !error && (
             <tr>
               <Td colSpan={5} className="text-ink-secondary">
-                加载中…
+                {t("keys.loading")}
               </Td>
             </tr>
           )}
           {keys !== null && keys.length === 0 && (
             <tr>
               <Td colSpan={5} className="text-ink-secondary">
-                还没有 Key。新建一个，就能在 API 里使用同一份额度；CLI 发布后也共用这一份。
+                {t("keys.empty")}
               </Td>
             </tr>
           )}
@@ -173,9 +175,9 @@ export const ApiKeysCard = ({ plan }: { plan: Plan }) => {
             <tr key={key.id}>
               <Td className="whitespace-nowrap">{key.name}</Td>
               <Td className="whitespace-nowrap font-mono text-ink-secondary">{maskedKey(key.prefix, key.suffix)}</Td>
-              <Td className="whitespace-nowrap font-mono text-ink-secondary">{formatShortDate(key.created_at)}</Td>
+              <Td className="whitespace-nowrap font-mono text-ink-secondary">{formatShortDate(key.created_at, locale)}</Td>
               <Td className="whitespace-nowrap font-mono text-ink-secondary">
-                {key.last_used_at ? formatIsoRelative(key.last_used_at) : "从未"}
+                {key.last_used_at ? formatIsoRelative(key.last_used_at, locale) : t("keys.never")}
               </Td>
               <Td className="text-right">
                 <button
@@ -184,7 +186,7 @@ export const ApiKeysCard = ({ plan }: { plan: Plan }) => {
                   disabled={revoking === key.id}
                   className="text-vermilion transition-colors hover:text-vermilion-hover disabled:opacity-disabled"
                 >
-                  {revoking === key.id ? "吊销中…" : "吊销"}
+                  {revoking === key.id ? t("keys.revoking") : t("keys.revoke")}
                 </button>
               </Td>
             </tr>
@@ -193,10 +195,13 @@ export const ApiKeysCard = ({ plan }: { plan: Plan }) => {
       </Table>
       <div className="flex flex-col gap-1.5 text-label leading-relaxed text-ink-secondary">
         <p>
-          Key 只在创建时完整显示一次，之后只能看到前后几位。{plan.name}可用 {plan.max_api_keys} 个 Key。
+          {t("keys.note1", {
+            plan: t(planLabelKeys[plan.id]),
+            count: plan.max_api_keys,
+          })}
         </p>
         <p>
-          CLI 发布后，在终端运行 <span className="font-mono text-ink">lubanpng login</span> 即可复用这一份额度。
+          {t("keys.note2.prefix")} <span className="font-mono text-ink">lubanpng login</span> {t("keys.note2.suffix")}
         </p>
       </div>
     </section>

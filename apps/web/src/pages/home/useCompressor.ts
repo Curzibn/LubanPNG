@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react"
 import { ErrorCode, errorMessage, fetchTask, isApiError, uploadImage } from "../../api/client.ts"
+import { useI18n } from "../../i18n/I18nProvider.tsx"
 import { createUploadQueue } from "../../lib/uploadQueue.ts"
 import { useSession } from "../../session/sessionContext.ts"
 import {
@@ -18,12 +19,8 @@ import {
   type TargetFormat,
 } from "./compressorRules.ts"
 
-const QUOTA_EXHAUSTED_ERROR = "额度已用完"
-const FILE_TOO_LARGE_ERROR = "文件超过大小上限"
-const POLL_TIMEOUT_ERROR = "等待超时，请稍后在工作台查看"
-const TRUNCATED_NOTICE = `单次最多 ${MAX_BATCH_FILES} 张，本次只处理前 ${MAX_BATCH_FILES} 张。`
-
 export const useCompressor = () => {
+  const { t } = useI18n()
   const { me, applyQuota } = useSession()
   const [items, setItems] = useState<CompressionItem[]>([])
   const [rejected, setRejected] = useState<RejectedFile[]>([])
@@ -45,9 +42,9 @@ export const useCompressor = () => {
     (id: string) => {
       exhaustedRef.current = true
       setQuotaExhausted(true)
-      update(id, { stage: "failed", error: QUOTA_EXHAUSTED_ERROR, queuePosition: null })
+      update(id, { stage: "failed", error: t("home.error.quota"), queuePosition: null })
     },
-    [update],
+    [t, update],
   )
 
   const processFile = useCallback(
@@ -80,7 +77,7 @@ export const useCompressor = () => {
           }
           if (task.status === "failed") {
             applyQuota(quota)
-            update(id, { stage: "failed", queuePosition: null, error: task.error_msg || "压缩失败" })
+            update(id, { stage: "failed", queuePosition: null, error: task.error_msg || t("row.compressFailed") })
             return
           }
           update(id, {
@@ -88,27 +85,31 @@ export const useCompressor = () => {
             queuePosition: task.queue_position,
           })
         }
-        update(id, { stage: "failed", queuePosition: null, error: POLL_TIMEOUT_ERROR })
+        update(id, { stage: "failed", queuePosition: null, error: t("home.error.timeout") })
       } catch (error) {
         if (isApiError(error) && error.code === ErrorCode.quotaExhausted) {
           markExhausted(id)
           return
         }
         if (isApiError(error) && error.code === ErrorCode.fileTooLarge) {
-          update(id, { stage: "failed", queuePosition: null, error: FILE_TOO_LARGE_ERROR })
+          update(id, { stage: "failed", queuePosition: null, error: t("home.error.tooLarge") })
           return
         }
-        update(id, { stage: "failed", queuePosition: null, error: errorMessage(error, "网络错误") })
+        update(id, { stage: "failed", queuePosition: null, error: errorMessage(error, t("home.error.network")) })
       }
     },
-    [applyQuota, markExhausted, update],
+    [applyQuota, markExhausted, t, update],
   )
 
   const addFiles = useCallback(
     (files: File[]) => {
-      const validation = validateFiles(files, maxFileSize)
+      const validation = validateFiles(files, maxFileSize, {
+        unsupported: t("dropzone.reject.formats", { formats: t("formats.list") }),
+        heic: t("dropzone.reject.heic"),
+        tooLarge: (limit) => t("dropzone.reject.tooLarge", { size: limit }),
+      })
       setRejected(validation.rejected)
-      setBatchNotice(validation.truncated ? TRUNCATED_NOTICE : null)
+      setBatchNotice(validation.truncated ? t("home.notice.truncated", { count: MAX_BATCH_FILES }) : null)
       if (validation.accepted.length === 0) return
       if (exhaustedRef.current || remaining === 0) {
         setQuotaExhausted(true)
@@ -138,7 +139,7 @@ export const useCompressor = () => {
         if (file) void queueRef.current.enqueue(() => processFile(item.id, file, item.target))
       })
     },
-    [maxFileSize, output, processFile, remaining],
+    [maxFileSize, output, processFile, remaining, t],
   )
 
   const dismissNotices = useCallback(() => {

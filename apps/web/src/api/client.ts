@@ -1,3 +1,6 @@
+import { acceptLanguage } from "../i18n/locale.ts"
+import { translateCurrent } from "../i18n/messages.ts"
+
 export type Subject = "account" | "device"
 export type PlanId = "anonymous" | "free"
 export type QuotaPeriod = "day" | "month"
@@ -149,8 +152,7 @@ type HeaderReader = (name: string) => string | null
 
 const CSRF_HEADER_NAME = "X-Requested-With"
 const CSRF_HEADER_VALUE = "LubanPNG"
-const NETWORK_FAILURE_MESSAGE = "网络错误，请检查连接后重试"
-const UNREADABLE_RESPONSE_MESSAGE = "服务暂时不可用，请稍后再试"
+const ACCEPT_LANGUAGE_HEADER = "Accept-Language"
 
 const isEnvelope = (value: unknown): value is Envelope<unknown> =>
   typeof value === "object" &&
@@ -176,10 +178,10 @@ const parseEnvelope = <T>(status: number, text: string, read: HeaderReader): Api
   try {
     parsed = text === "" ? null : JSON.parse(text)
   } catch {
-    throw new ApiError(status, ErrorCode.network, UNREADABLE_RESPONSE_MESSAGE)
+    throw new ApiError(status, ErrorCode.network, translateCurrent("api.unreadable"))
   }
   if (!isEnvelope(parsed)) {
-    throw new ApiError(status, ErrorCode.network, UNREADABLE_RESPONSE_MESSAGE)
+    throw new ApiError(status, ErrorCode.network, translateCurrent("api.unreadable"))
   }
   if (status >= 200 && status < 300 && parsed.code === 0) {
     return { data: parsed.data as T, quota: readQuotaHeaders(read) }
@@ -194,7 +196,7 @@ type RequestOptions = {
 }
 
 const request = async <T>(method: string, path: string, options: RequestOptions = {}): Promise<ApiResult<T>> => {
-  const headers = new Headers({ Accept: "application/json" })
+  const headers = new Headers({ Accept: "application/json", [ACCEPT_LANGUAGE_HEADER]: acceptLanguage() })
   if (method !== "GET") headers.set(CSRF_HEADER_NAME, CSRF_HEADER_VALUE)
   if (options.json !== undefined) headers.set("Content-Type", "application/json")
   let response: Response
@@ -209,7 +211,7 @@ const request = async <T>(method: string, path: string, options: RequestOptions 
     })
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw error
-    throw new ApiError(0, ErrorCode.network, NETWORK_FAILURE_MESSAGE)
+    throw new ApiError(0, ErrorCode.network, translateCurrent("api.networkError"))
   }
   const text = await response.text()
   return parseEnvelope<T>(response.status, text, (name) => response.headers.get(name))
@@ -275,6 +277,7 @@ export const uploadImage = (file: File, options: UploadOptions = {}): Promise<Ap
     xhr.withCredentials = true
     xhr.setRequestHeader(CSRF_HEADER_NAME, CSRF_HEADER_VALUE)
     xhr.setRequestHeader("Accept", "application/json")
+    xhr.setRequestHeader(ACCEPT_LANGUAGE_HEADER, acceptLanguage())
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable && event.total > 0) options.onProgress?.(event.loaded / event.total)
     }
@@ -285,7 +288,7 @@ export const uploadImage = (file: File, options: UploadOptions = {}): Promise<Ap
         reject(error)
       }
     }
-    xhr.onerror = () => reject(new ApiError(0, ErrorCode.network, NETWORK_FAILURE_MESSAGE))
+    xhr.onerror = () => reject(new ApiError(0, ErrorCode.network, translateCurrent("api.networkError")))
     xhr.onabort = () => reject(new DOMException("上传已取消", "AbortError"))
     options.signal?.addEventListener("abort", () => xhr.abort(), { once: true })
     const form = new FormData()
@@ -296,7 +299,7 @@ export const uploadImage = (file: File, options: UploadOptions = {}): Promise<Ap
   })
 
 export const fetchCompressedBlob = async (url: string): Promise<Blob> => {
-  const response = await fetch(url, { credentials: "include" })
-  if (!response.ok) throw new ApiError(response.status, ErrorCode.network, "下载失败")
+  const response = await fetch(url, { credentials: "include", headers: { [ACCEPT_LANGUAGE_HEADER]: acceptLanguage() } })
+  if (!response.ok) throw new ApiError(response.status, ErrorCode.network, translateCurrent("api.downloadFailed"))
   return response.blob()
 }

@@ -56,9 +56,11 @@ export const QuotaRing = ({
           <text x={center} y={56} textAnchor="middle" className="fill-ink font-mono text-heading-lg font-semibold">
             {remaining}
           </text>
-          <text x={center} y={76} textAnchor="middle" className="fill-ink-secondary font-mono text-label-sm">
-            {caption ?? `剩余 / ${limit}`}
-          </text>
+          {caption !== undefined && (
+            <text x={center} y={76} textAnchor="middle" className="fill-ink-secondary font-mono text-label-sm">
+              {caption}
+            </text>
+          )}
         </>
       )}
     </svg>

@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
 import { tokens } from "./tokens.ts"
 
 const packageDir = dirname(fileURLToPath(import.meta.url))
-const output = join(packageDir, "..", "..", "apps", "web", "public", "og.png")
+const publicDir = join(packageDir, "..", "..", "apps", "web", "public")
 const chrome = process.env.CHROME_BIN ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 const { color, font, text, tracking, leading, radius, borderWidth, fontWeight, controlHeight } =
@@ -17,8 +17,39 @@ const space = (units: number): string => `${units * spacingUnit}px`
 
 const canvas = { width: 1200, height: 630 }
 
-const html = `<!doctype html>
-<html lang="zh-CN">
+type OgLocale = {
+  file: string
+  lang: string
+  mark: string
+  eyebrow: string
+  headline: string
+  lede: string
+  chips: string[]
+}
+
+const locales: OgLocale[] = [
+  {
+    file: "og.png",
+    lang: "zh-CN",
+    mark: "鲁",
+    eyebrow: "PNG · JPEG · GIF · WebP · AVIF 智能压缩",
+    headline: "把图片刨薄，不伤画质。",
+    lede: "调色板量化与重编码把体积削掉一半以上，肉眼看不出差别。",
+    chips: ["网页", "API", "CLI"],
+  },
+  {
+    file: "og-en.png",
+    lang: "en",
+    mark: "L",
+    eyebrow: "PNG · JPEG · GIF · WebP · AVIF smart compression",
+    headline: "Shave image weight. Keep it sharp.",
+    lede: "Palette quantization and re-encoding cut file size by half or more — with no visible difference.",
+    chips: ["Web", "API", "CLI"],
+  },
+]
+
+const html = (locale: OgLocale): string => `<!doctype html>
+<html lang="${locale.lang}">
   <head>
     <meta charset="UTF-8" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -119,20 +150,18 @@ const html = `<!doctype html>
     <div class="rule"></div>
     <div>
       <div class="brand">
-        <span class="mark">鲁</span>
+        <span class="mark">${locale.mark}</span>
         <span class="wordmark">LubanPNG</span>
       </div>
       <div style="margin-top: ${space(16)}">
-        <p class="eyebrow">PNG · JPEG · GIF · WebP · AVIF 智能压缩</p>
-        <h1>把图片刨薄，不伤画质。</h1>
-        <p class="lede">调色板量化与重编码把体积削掉一半以上，肉眼看不出差别。</p>
+        <p class="eyebrow">${locale.eyebrow}</p>
+        <h1>${locale.headline}</h1>
+        <p class="lede">${locale.lede}</p>
       </div>
     </div>
     <div class="footer">
       <div class="chips">
-        <span class="chip">网页</span>
-        <span class="chip">API</span>
-        <span class="chip">CLI</span>
+        ${locale.chips.map((chip) => `<span class="chip">${chip}</span>`).join("\n        ")}
       </div>
       <span class="domain">lubanpng.wizthink.cn</span>
     </div>
@@ -142,23 +171,25 @@ const html = `<!doctype html>
 
 const workDir = mkdtempSync(join(tmpdir(), "lubanpng-og-"))
 try {
-  const page = join(workDir, "og.html")
-  writeFileSync(page, html)
-  execFileSync(
-    chrome,
-    [
-      "--headless=new",
-      "--disable-gpu",
-      "--hide-scrollbars",
-      "--force-device-scale-factor=1",
-      `--window-size=${canvas.width},${canvas.height}`,
-      "--virtual-time-budget=8000",
-      `--screenshot=${output}`,
-      `file://${page}`,
-    ],
-    { stdio: "inherit" },
-  )
-  process.stdout.write(`og image written to ${output}\n`)
+  for (const locale of locales) {
+    const page = join(workDir, `${locale.lang}.html`)
+    writeFileSync(page, html(locale))
+    execFileSync(
+      chrome,
+      [
+        "--headless=new",
+        "--disable-gpu",
+        "--hide-scrollbars",
+        "--force-device-scale-factor=1",
+        `--window-size=${canvas.width},${canvas.height}`,
+        "--virtual-time-budget=8000",
+        `--screenshot=${join(publicDir, locale.file)}`,
+        `file://${page}`,
+      ],
+      { stdio: "inherit" },
+    )
+    process.stdout.write(`og image written to ${join(publicDir, locale.file)}\n`)
+  }
 } finally {
   rmSync(workDir, { recursive: true, force: true })
 }

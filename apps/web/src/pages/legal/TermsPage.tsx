@@ -1,10 +1,22 @@
+import { useI18n } from "../../i18n/I18nProvider.tsx"
+import type { MessageKey } from "../../i18n/messages.ts"
 import { LegalPage } from "./LegalPage.tsx"
 
-const paragraphs = [
-  "LubanPNG 是一个图片压缩预览服务：接收 PNG、JPEG、GIF、WebP、AVIF 图片，返回体积更小的压缩产物；静态图可按需转换为 WebP、AVIF、PNG 或 JPEG。",
-  "上传的原图与压缩产物只做临时存储，超过保留期后自动删除；免费套餐的保留期为 24 小时。",
-  "额度按套餐计算：未登录每天 5 次，注册用户每月 50 次，网页、API、CLI 共用一份次数，压缩失败或压缩后没有变小（保留原图）不计次；格式转换在压缩之外额外计 1 次。",
-  "本服务处于预览阶段，按现状提供，不对可用性、保留时长或压缩结果作任何保证。",
-]
+const paragraphKeys = [
+  "legal.terms.p1",
+  "legal.terms.p2",
+  "legal.terms.p3",
+  "legal.terms.p4",
+] as const satisfies ReadonlyArray<MessageKey>
 
-export const TermsPage = () => <LegalPage eyebrow="LEGAL" title="服务条款" paragraphs={paragraphs} />
+export const TermsPage = () => {
+  const { t } = useI18n()
+  return (
+    <LegalPage
+      metaId="terms"
+      eyebrow={t("legal.eyebrow")}
+      title={t("legal.terms.title")}
+      paragraphs={paragraphKeys.map((key) => t(key))}
+    />
+  )
+}

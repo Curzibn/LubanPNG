@@ -3,6 +3,8 @@ import { errorMessage, listTasks, type TaskRecord, type TaskSource, type TaskSta
 import { Eyebrow } from "../../components/Eyebrow.tsx"
 import { Notice } from "../../components/Notice.tsx"
 import { Table, Td, Th } from "../../components/Table.tsx"
+import { useI18n } from "../../i18n/I18nProvider.tsx"
+import type { MessageKey } from "../../i18n/messages.ts"
 import { cx } from "../../lib/cx.ts"
 import {
   formatBytes,
@@ -13,7 +15,7 @@ import {
   savingsPercent,
 } from "../../lib/format.ts"
 
-const sourceLabel: Record<TaskSource, string> = { web: "网页", api: "API", cli: "CLI" }
+const sourceLabelKeys: Record<TaskSource, MessageKey> = { web: "tasks.source.web", api: "tasks.source.api", cli: "tasks.source.cli" }
 
 const statusDot: Record<TaskStatus, string> = {
   pending: "bg-amber",
@@ -22,16 +24,16 @@ const statusDot: Record<TaskStatus, string> = {
   failed: "bg-vermilion",
 }
 
-const statusText = (task: TaskRecord): string => {
+const statusText = (task: TaskRecord, t: (key: MessageKey, params?: Record<string, string | number>) => string): string => {
   switch (task.status) {
     case "completed":
-      return "完成"
+      return t("tasks.status.done")
     case "failed":
-      return task.error_msg ? `失败 · ${task.error_msg}` : "失败"
+      return task.error_msg ? `${t("tasks.status.failed")} · ${task.error_msg}` : t("tasks.status.failed")
     case "processing":
-      return "处理中"
+      return t("tasks.status.processing")
     case "pending":
-      return "排队中"
+      return t("tasks.status.pending")
   }
 }
 
@@ -46,6 +48,7 @@ const SizeCell = ({ task }: { task: TaskRecord }) => {
 }
 
 const ActionCell = ({ task }: { task: TaskRecord }) => {
+  const { t } = useI18n()
   if (task.downloadable && task.compressed_url) {
     return (
       <a
@@ -53,16 +56,17 @@ const ActionCell = ({ task }: { task: TaskRecord }) => {
         download={outputFileName(task.original_name, task.output_format)}
         className="text-ink transition-colors hover:text-vermilion"
       >
-        下载
+        {t("tasks.download")}
       </a>
     )
   }
-  if (task.status === "failed") return <span className="text-ink-secondary">未扣次</span>
-  if (task.status === "completed") return <span className="text-ink-secondary">已过期</span>
+  if (task.status === "failed") return <span className="text-ink-secondary">{t("tasks.free")}</span>
+  if (task.status === "completed") return <span className="text-ink-secondary">{t("tasks.expired")}</span>
   return null
 }
 
 export const TasksCard = ({ retentionHours }: { retentionHours: number }) => {
+  const { locale, t } = useI18n()
   const [tasks, setTasks] = useState<TaskRecord[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -73,31 +77,31 @@ export const TasksCard = ({ retentionHours }: { retentionHours: number }) => {
         if (!cancelled) setTasks(list)
       })
       .catch((loadError: unknown) => {
-        if (!cancelled) setError(errorMessage(loadError, "读取任务失败"))
+        if (!cancelled) setError(errorMessage(loadError, t("tasks.error.load")))
       })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [t])
 
   return (
-    <section aria-label="最近任务" className="flex flex-col gap-4 rounded-card border-thin border-hairline bg-surface p-5 md:p-7">
+    <section aria-label={t("tasks.aria")} className="flex flex-col gap-4 rounded-card border-thin border-hairline bg-surface p-5 md:p-7">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Eyebrow>最近任务</Eyebrow>
-        <p className="text-label text-ink-secondary">产物 {retentionHours} 小时内可重新下载</p>
+        <Eyebrow>{t("tasks.title")}</Eyebrow>
+        <p className="text-label text-ink-secondary">{t("tasks.retention", { hours: retentionHours })}</p>
       </div>
       {error && <Notice tone="error">{error}</Notice>}
-      <Table label="最近任务列表">
+      <Table label={t("tasks.tableAria")}>
         <thead>
           <tr>
-            <Th>时间</Th>
-            <Th>文件</Th>
-            <Th>体积</Th>
-            <Th>节省</Th>
-            <Th>来源</Th>
-            <Th>状态</Th>
+            <Th>{t("tasks.col.time")}</Th>
+            <Th>{t("tasks.col.file")}</Th>
+            <Th>{t("tasks.col.size")}</Th>
+            <Th>{t("tasks.col.savings")}</Th>
+            <Th>{t("tasks.col.source")}</Th>
+            <Th>{t("tasks.col.status")}</Th>
             <Th>
-              <span className="sr-only">操作</span>
+              <span className="sr-only">{t("tasks.col.actions")}</span>
             </Th>
           </tr>
         </thead>
@@ -105,14 +109,14 @@ export const TasksCard = ({ retentionHours }: { retentionHours: number }) => {
           {tasks === null && !error && (
             <tr>
               <Td colSpan={7} className="text-ink-secondary">
-                加载中…
+                {t("tasks.loading")}
               </Td>
             </tr>
           )}
           {tasks !== null && tasks.length === 0 && (
             <tr>
               <Td colSpan={7} className="text-ink-secondary">
-                还没有任务。回到首页压缩第一张图。
+                {t("tasks.empty")}
               </Td>
             </tr>
           )}
@@ -123,7 +127,7 @@ export const TasksCard = ({ retentionHours }: { retentionHours: number }) => {
                 : null
             return (
               <tr key={task.task_id}>
-                <Td className="whitespace-nowrap font-mono text-ink-secondary">{formatUnixRelative(task.created_at)}</Td>
+                <Td className="whitespace-nowrap font-mono text-ink-secondary">{formatUnixRelative(task.created_at, locale)}</Td>
                 <Td className="max-w-sidebar truncate font-mono" title={task.original_name}>
                   {task.original_name}
                   {task.target_format && (
@@ -138,11 +142,11 @@ export const TasksCard = ({ retentionHours }: { retentionHours: number }) => {
                 <Td className={cx("whitespace-nowrap font-mono", savings ? "font-semibold text-jade" : "text-ink-secondary")}>
                   {savings ?? "—"}
                 </Td>
-                <Td className="whitespace-nowrap text-ink-secondary">{sourceLabel[task.source]}</Td>
+                <Td className="whitespace-nowrap text-ink-secondary">{t(sourceLabelKeys[task.source])}</Td>
                 <Td className="whitespace-nowrap">
                   <span className="inline-flex items-center gap-1.5">
                     <span className={cx("size-2 rounded-pill", statusDot[task.status])} aria-hidden="true" />
-                    {statusText(task)}
+                    {statusText(task, t)}
                   </span>
                 </Td>
                 <Td className="whitespace-nowrap">

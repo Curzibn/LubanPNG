@@ -6,8 +6,6 @@ export const POLL_WAIT_SECONDS = 10
 export const MAX_POLLS_PER_TASK = 90
 export const CONVERSION_EXTRA_UNITS = 1
 export const JPEG_FLATTEN_BACKGROUND = tokens.color.surface.toLowerCase()
-export const FORMAT_LIST_LABEL = "PNG、JPEG、GIF、WebP、AVIF"
-export const HEIC_HINT = "HEIC 暂不支持：iPhone 相册选图时 Safari 会自动转成 JPEG，其他设备请先导出为 JPEG"
 
 const heicMimeTypes = new Set(["image/heic", "image/heif", "image/heic-sequence", "image/heif-sequence"])
 const heicExtensions = new Set(["heic", "heif"])
@@ -50,13 +48,16 @@ export const detectFormat = (name: string, mimeType: string): ImageFormat | null
 export type TargetFormat = "webp" | "avif" | "png" | "jpeg"
 export type OutputChoice = "keep" | TargetFormat
 
-export const OUTPUT_CHOICES: ReadonlyArray<{ value: OutputChoice; label: string }> = [
-  { value: "keep", label: "保持原格式" },
-  { value: "webp", label: "WebP" },
-  { value: "avif", label: "AVIF" },
-  { value: "png", label: "PNG" },
-  { value: "jpeg", label: "JPEG" },
-]
+export const OUTPUT_CHOICES: ReadonlyArray<Exclude<OutputChoice, "keep">> = ["webp", "avif", "png", "jpeg"]
+
+const outputFormatLabels: Record<Exclude<OutputChoice, "keep">, string> = {
+  webp: "WebP",
+  avif: "AVIF",
+  png: "PNG",
+  jpeg: "JPEG",
+}
+
+export const outputFormatLabel = (choice: Exclude<OutputChoice, "keep">): string => outputFormatLabels[choice]
 
 const nativeTarget: Record<ImageFormat, TargetFormat | null> = {
   PNG: "png",
@@ -83,16 +84,26 @@ export type Validation<T extends FileLike> = {
   truncated: boolean
 }
 
-export const validateFiles = <T extends FileLike>(files: T[], maxFileSize: number | null): Validation<T> => {
+export type RejectionMessages = {
+  unsupported: string
+  heic: string
+  tooLarge: (limit: string) => string
+}
+
+export const validateFiles = <T extends FileLike>(
+  files: T[],
+  maxFileSize: number | null,
+  messages: RejectionMessages,
+): Validation<T> => {
   const accepted: T[] = []
   const rejected: RejectedFile[] = []
   for (const file of files) {
     if (detectFormat(file.name, file.type) === null) {
-      rejected.push({ name: file.name, reason: isHeicFile(file.name, file.type) ? HEIC_HINT : `只支持 ${FORMAT_LIST_LABEL}` })
+      rejected.push({ name: file.name, reason: isHeicFile(file.name, file.type) ? messages.heic : messages.unsupported })
       continue
     }
     if (maxFileSize !== null && file.size > maxFileSize) {
-      rejected.push({ name: file.name, reason: `超过 ${formatBytes(maxFileSize, { trim: true })} 上限` })
+      rejected.push({ name: file.name, reason: messages.tooLarge(formatBytes(maxFileSize, { trim: true })) })
       continue
     }
     accepted.push(file)

@@ -7,10 +7,17 @@ import {
   outputNameFor,
   summarize,
   validateFiles,
+  type RejectionMessages,
   type CompressionItem,
 } from "./compressorRules.ts"
 
 const file = (name: string, size: number, type = ""): { name: string; size: number; type: string } => ({ name, size, type })
+
+const messages: RejectionMessages = {
+  unsupported: "只支持 PNG、JPEG、GIF、WebP、AVIF",
+  heic: "HEIC 暂不支持：iPhone 相册选图时 Safari 会自动转成 JPEG，其他设备请先导出为 JPEG",
+  tooLarge: (limit) => `超过 ${limit} 上限`,
+}
 
 describe("detectFormat", () => {
   it("prefers the mime type and falls back to the extension", () => {
@@ -46,7 +53,7 @@ describe("validateFiles", () => {
   const limit = 5 * 1024 * 1024
 
   it("rejects unsupported formats and oversized files with a reason", () => {
-    const result = validateFiles([file("a.png", 10, "image/png"), file("b.txt", 10), file("c.jpg", limit + 1)], limit)
+    const result = validateFiles([file("a.png", 10, "image/png"), file("b.txt", 10), file("c.jpg", limit + 1)], limit, messages)
     expect(result.accepted.map((f) => f.name)).toEqual(["a.png"])
     expect(result.rejected).toEqual([
       { name: "b.txt", reason: "只支持 PNG、JPEG、GIF、WebP、AVIF" },
@@ -56,7 +63,7 @@ describe("validateFiles", () => {
   })
 
   it("explains the HEIC path instead of the generic rejection", () => {
-    const result = validateFiles([file("IMG_0001.HEIC", 10, ""), file("blob.bin", 10, "image/heif")], limit)
+    const result = validateFiles([file("IMG_0001.HEIC", 10, ""), file("blob.bin", 10, "image/heif")], limit, messages)
     expect(result.accepted).toEqual([])
     expect(result.rejected.map((entry) => entry.reason)).toEqual([
       "HEIC 暂不支持：iPhone 相册选图时 Safari 会自动转成 JPEG，其他设备请先导出为 JPEG",
@@ -66,14 +73,14 @@ describe("validateFiles", () => {
 
   it("keeps only the first twenty accepted files per batch", () => {
     const files = Array.from({ length: 23 }, (_, i) => file(`img-${i}.png`, 100, "image/png"))
-    const result = validateFiles(files, limit)
+    const result = validateFiles(files, limit, messages)
     expect(result.accepted).toHaveLength(20)
     expect(result.accepted[19]?.name).toBe("img-19.png")
     expect(result.truncated).toBe(true)
   })
 
   it("skips the size check while the plan limit is unknown", () => {
-    const result = validateFiles([file("big.png", limit * 10, "image/png")], null)
+    const result = validateFiles([file("big.png", limit * 10, "image/png")], null, messages)
     expect(result.accepted).toHaveLength(1)
   })
 })

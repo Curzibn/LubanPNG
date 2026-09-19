@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ChangeEvent, type ClipboardEvent, type KeyboardEvent } from "react"
+import { useI18n } from "../../i18n/I18nProvider.tsx"
 import { cx } from "../../lib/cx.ts"
 
 export const OTP_LENGTH = 6
@@ -18,6 +19,7 @@ export const OtpInput = ({
   disabled?: boolean
   autoFocus?: boolean
 }) => {
+  const { t } = useI18n()
   const inputs = useRef<Array<HTMLInputElement | null>>([])
   const activeIndex = Math.min(value.length, OTP_LENGTH - 1)
 
@@ -59,7 +61,7 @@ export const OtpInput = ({
   }
 
   return (
-    <div className="grid grid-cols-6 gap-2 md:gap-2.5" role="group" aria-label="6 位验证码">
+    <div className="grid grid-cols-6 gap-2 md:gap-2.5" role="group" aria-label={t("otp.group")}>
       {Array.from({ length: OTP_LENGTH }, (_, index) => {
         const digit = value[index] ?? ""
         const filled = digit !== ""
@@ -76,7 +78,7 @@ export const OtpInput = ({
             maxLength={OTP_LENGTH}
             value={digit}
             disabled={disabled}
-            aria-label={`验证码第 ${index + 1} 位`}
+            aria-label={t("otp.digit", { index: index + 1 })}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}

@@ -1,9 +1,20 @@
-import { usePageTitle } from "../../app/usePageTitle.ts"
+import { usePageMeta } from "../../app/usePageMeta.ts"
 import { Container } from "../../components/Container.tsx"
 import { Eyebrow } from "../../components/Eyebrow.tsx"
+import type { RouteMetaId } from "../../i18n/meta.ts"
 
-export const LegalPage = ({ eyebrow, title, paragraphs }: { eyebrow: string; title: string; paragraphs: string[] }) => {
-  usePageTitle(title)
+export const LegalPage = ({
+  metaId,
+  eyebrow,
+  title,
+  paragraphs,
+}: {
+  metaId: RouteMetaId
+  eyebrow: string
+  title: string
+  paragraphs: string[]
+}) => {
+  usePageMeta(metaId)
   return (
     <Container className="pt-10 md:pt-18">
       <article className="mx-auto flex w-full max-w-lede flex-col gap-6">

@@ -1,27 +1,82 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://lubanpng.wizthink.cn/</loc>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lubanpng.wizthink.cn/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lubanpng.wizthink.cn/en/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lubanpng.wizthink.cn/"/>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://lubanpng.wizthink.cn/en/</loc>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lubanpng.wizthink.cn/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lubanpng.wizthink.cn/en/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lubanpng.wizthink.cn/"/>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
     <loc>https://lubanpng.wizthink.cn/pricing</loc>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lubanpng.wizthink.cn/pricing"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lubanpng.wizthink.cn/en/pricing"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lubanpng.wizthink.cn/pricing"/>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lubanpng.wizthink.cn/en/pricing</loc>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lubanpng.wizthink.cn/pricing"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lubanpng.wizthink.cn/en/pricing"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lubanpng.wizthink.cn/pricing"/>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://lubanpng.wizthink.cn/developers</loc>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lubanpng.wizthink.cn/developers"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lubanpng.wizthink.cn/en/developers"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lubanpng.wizthink.cn/developers"/>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lubanpng.wizthink.cn/en/developers</loc>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lubanpng.wizthink.cn/developers"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lubanpng.wizthink.cn/en/developers"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lubanpng.wizthink.cn/developers"/>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://lubanpng.wizthink.cn/terms</loc>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lubanpng.wizthink.cn/terms"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lubanpng.wizthink.cn/en/terms"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lubanpng.wizthink.cn/terms"/>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://lubanpng.wizthink.cn/en/terms</loc>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lubanpng.wizthink.cn/terms"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lubanpng.wizthink.cn/en/terms"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lubanpng.wizthink.cn/terms"/>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>
   <url>
     <loc>https://lubanpng.wizthink.cn/privacy</loc>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lubanpng.wizthink.cn/privacy"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lubanpng.wizthink.cn/en/privacy"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lubanpng.wizthink.cn/privacy"/>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://lubanpng.wizthink.cn/en/privacy</loc>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lubanpng.wizthink.cn/privacy"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lubanpng.wizthink.cn/en/privacy"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lubanpng.wizthink.cn/privacy"/>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>

@@ -86,13 +86,19 @@ describe("compressedRatioPercent", () => {
 })
 
 describe("formatResetTime", () => {
-  it("formats the reset instant in Asia/Shanghai", () => {
-    expect(formatResetTime("2026-09-30T16:00:00Z")).toBe("10 月 1 日 00:00")
-    expect(formatResetTime("2026-09-10T15:59:59Z")).toBe("9 月 10 日 23:59")
+  it("formats the reset instant in Asia/Shanghai for Chinese", () => {
+    expect(formatResetTime("2026-09-30T16:00:00Z", "zh-CN")).toBe("10 月 1 日 00:00")
+    expect(formatResetTime("2026-09-10T15:59:59Z", "zh-CN")).toBe("9 月 10 日 23:59")
+  })
+
+  it("formats the reset instant in Asia/Shanghai for English", () => {
+    expect(formatResetTime("2026-09-30T16:00:00Z", "en")).toBe("Oct 1, 00:00")
+    expect(formatResetTime("2026-09-10T15:59:59Z", "en")).toBe("Sep 10, 23:59")
   })
 
   it("returns an empty string for an unparsable instant", () => {
-    expect(formatResetTime("soon")).toBe("")
+    expect(formatResetTime("soon", "zh-CN")).toBe("")
+    expect(formatResetTime("soon", "en")).toBe("")
   })
 })
 
@@ -101,16 +107,20 @@ describe("relative time", () => {
   const timeZone = "Asia/Shanghai"
 
   it("labels the same day as today", () => {
-    expect(formatUnixRelative(1789020720, { now, timeZone })).toBe("今天 14:12")
+    expect(formatUnixRelative(1789020720, "zh-CN", { now, timeZone })).toBe("今天 14:12")
+    expect(formatUnixRelative(1789020720, "en", { now, timeZone })).toBe("Today 14:12")
   })
 
   it("labels the previous day as yesterday", () => {
-    expect(formatIsoRelative("2026-09-09T13:39:00Z", { now, timeZone })).toBe("昨天 21:39")
+    expect(formatIsoRelative("2026-09-09T13:39:00Z", "zh-CN", { now, timeZone })).toBe("昨天 21:39")
+    expect(formatIsoRelative("2026-09-09T13:39:00Z", "en", { now, timeZone })).toBe("Yesterday 21:39")
   })
 
   it("falls back to a month-day stamp", () => {
-    expect(formatIsoRelative("2026-09-02T02:05:00Z", { now, timeZone })).toBe("09-02 10:05")
-    expect(formatShortDate("2026-09-02T02:05:00Z", timeZone)).toBe("09-02")
+    expect(formatIsoRelative("2026-09-02T02:05:00Z", "zh-CN", { now, timeZone })).toBe("09-02 10:05")
+    expect(formatShortDate("2026-09-02T02:05:00Z", "zh-CN", timeZone)).toBe("09-02")
+    expect(formatIsoRelative("2026-09-02T02:05:00Z", "en", { now, timeZone })).toBe("Sep 2, 10:05")
+    expect(formatShortDate("2026-09-02T02:05:00Z", "en", timeZone)).toBe("Sep 2")
   })
 })
 

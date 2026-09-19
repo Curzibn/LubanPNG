@@ -1,4 +1,5 @@
 import { DownloadIcon } from "../../components/icons.tsx"
+import { useI18n } from "../../i18n/I18nProvider.tsx"
 import { cx } from "../../lib/cx.ts"
 import { compressedRatioPercent, formatBytes, formatSavings, formatSizePair, savingsPercent } from "../../lib/format.ts"
 import { outputNameFor, targetLabel, type CompressionItem } from "./compressorRules.ts"
@@ -7,35 +8,39 @@ const pillClass =
   "inline-flex items-center whitespace-nowrap rounded-pill px-2.25 py-0.75 font-mono text-label-sm font-semibold md:px-2.5 md:py-1 md:text-label"
 
 const StatusPill = ({ item }: { item: CompressionItem }) => {
+  const { t } = useI18n()
   switch (item.stage) {
     case "completed":
       return (
         <span className={cx(pillClass, "bg-jade-soft text-jade")}>
-          {item.compressedSize === null ? "完成" : formatSavings(savingsPercent(item.originalSize, item.compressedSize))}
+          {item.compressedSize === null ? t("row.done") : formatSavings(savingsPercent(item.originalSize, item.compressedSize))}
         </span>
       )
     case "failed":
-      return <span className={cx(pillClass, "bg-vermilion-soft text-vermilion")}>失败</span>
+      return <span className={cx(pillClass, "bg-vermilion-soft text-vermilion")}>{t("row.failed")}</span>
     case "uploading":
-      return <span className={cx(pillClass, "text-ink-secondary")}>上传中 {Math.round(item.uploadRatio * 100)}%</span>
+      return <span className={cx(pillClass, "text-ink-secondary")}>{t("row.uploading", { percent: Math.round(item.uploadRatio * 100) })}</span>
     case "queued":
       return (
         <span className={cx(pillClass, "text-ink-secondary")}>
-          {item.queuePosition !== null && item.queuePosition > 0 ? `排队中 · 第 ${item.queuePosition} 位` : "排队中"}
+          {item.queuePosition !== null && item.queuePosition > 0
+            ? t("row.queuedAt", { position: item.queuePosition })
+            : t("row.queued")}
         </span>
       )
     case "processing":
-      return <span className={cx(pillClass, "text-ink-secondary")}>处理中</span>
+      return <span className={cx(pillClass, "text-ink-secondary")}>{t("row.processing")}</span>
     case "waiting":
-      return <span className={cx(pillClass, "text-ink-secondary")}>等待上传</span>
+      return <span className={cx(pillClass, "text-ink-secondary")}>{t("row.waiting")}</span>
   }
 }
 
 const Sizes = ({ item }: { item: CompressionItem }) => {
+  const { t } = useI18n()
   if (item.stage === "failed") {
     return (
       <span className="truncate text-vermilion" title={item.error ?? undefined}>
-        {item.error ?? "压缩失败"}
+        {item.error ?? t("row.compressFailed")}
       </span>
     )
   }
@@ -67,7 +72,9 @@ const barFill = (item: CompressionItem): { className: string; width: number } =>
 }
 
 export const ResultRow = ({ item }: { item: CompressionItem }) => {
+  const { t } = useI18n()
   const fill = barFill(item)
+  const name = outputNameFor(item)
   const downloadable = item.stage === "completed" && item.compressedUrl !== null
   return (
     <li className="grid grid-result-card items-center gap-2.5 rounded-tile border-thin border-hairline bg-surface p-3.5 md:grid-result-row md:gap-5 md:rounded-none md:border-x-0 md:border-t-0 md:px-6 md:py-4 md:last:border-b-0">
@@ -95,8 +102,8 @@ export const ResultRow = ({ item }: { item: CompressionItem }) => {
       {downloadable ? (
         <a
           href={item.compressedUrl ?? undefined}
-          download={outputNameFor(item)}
-          aria-label={`下载 ${outputNameFor(item)}`}
+          download={name}
+          aria-label={t("row.downloadAria", { name })}
           className="area-download flex size-11 items-center justify-center justify-self-end rounded-control text-ink transition-colors hover:bg-panel"
         >
           <DownloadIcon className="size-5" />

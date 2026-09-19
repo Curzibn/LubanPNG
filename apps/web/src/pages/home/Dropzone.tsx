@@ -1,14 +1,16 @@
 import { useEffect, useId, useRef, useState, type DragEvent, type ReactNode } from "react"
 import { Button } from "../../components/Button.tsx"
 import { UploadTrayIcon } from "../../components/icons.tsx"
+import { useI18n } from "../../i18n/I18nProvider.tsx"
 import { cx } from "../../lib/cx.ts"
 import { formatBytes } from "../../lib/format.ts"
 import { ACCEPTED_MIME_TYPES, MAX_BATCH_FILES } from "./compressorRules.ts"
 
 const Ruler = () => {
+  const { t } = useI18n()
   const patternId = useId()
   return (
-    <svg role="img" aria-label="刻度尺" className="block h-3.5 w-full">
+    <svg role="img" aria-label={t("dropzone.ruler")} className="block h-3.5 w-full">
       <defs>
         <pattern id={patternId} width="50" height="14" patternUnits="userSpaceOnUse">
           <line x1="0.5" y1="2" x2="0.5" y2="14" strokeWidth="1" className="stroke-ink" />
@@ -35,6 +37,7 @@ export const Dropzone = ({
   maxFileSize: number | null
   children?: ReactNode
 }) => {
+  const { t } = useI18n()
   const inputRef = useRef<HTMLInputElement>(null)
   const dragDepth = useRef(0)
   const [dragging, setDragging] = useState(false)
@@ -70,7 +73,7 @@ export const Dropzone = ({
     if (files.length > 0) onFiles(files)
   }
 
-  const sizeHint = maxFileSize === null ? "" : ` · 每张 ${formatBytes(maxFileSize, { trim: true })} 以内`
+  const sizeHint = maxFileSize === null ? "" : t("dropzone.sizeHint", { size: formatBytes(maxFileSize, { trim: true }) })
 
   return (
     <div
@@ -90,21 +93,22 @@ export const Dropzone = ({
     >
       <Ruler />
       <div className="flex flex-col items-center gap-3 px-5 pb-6 pt-8 text-center md:gap-4 md:px-10 md:pb-10 md:pt-14">
-        <UploadTrayIcon label="拖入图片" className="size-9 text-ink md:size-11" />
+        <UploadTrayIcon label={t("dropzone.icon")} className="size-9 text-ink md:size-11" />
         <button type="button" onClick={openPicker} className="font-medium text-heading-sm text-ink md:text-heading-lg">
-          <span className="md:hidden">点击选择图片</span>
-          <span className="hidden md:inline">拖入图片，或点击选择</span>
+          <span className="md:hidden">{t("dropzone.pick.mobile")}</span>
+          <span className="hidden md:inline">{t("dropzone.pick.desktop")}</span>
         </button>
         <p className="text-label text-ink-secondary md:text-ui">
           <span className="md:hidden">
-            最多 {MAX_BATCH_FILES} 张{sizeHint}
+            {t("dropzone.limit.mobile", { count: MAX_BATCH_FILES })}
+            {sizeHint}
           </span>
           <span className="hidden md:inline">
-            单次最多 {MAX_BATCH_FILES} 张{sizeHint} · PNG / JPEG / GIF / WebP / AVIF
+            {t("dropzone.limit.desktop", { count: MAX_BATCH_FILES, sizeHint })}
           </span>
         </p>
         <Button variant="ink" size="xl" onClick={openPicker} className="mt-1.5 w-full rounded-tile text-ui-lg md:hidden">
-          选择图片
+          {t("dropzone.choose")}
         </Button>
         {children}
       </div>
@@ -114,7 +118,7 @@ export const Dropzone = ({
         multiple
         hidden
         accept={ACCEPTED_MIME_TYPES.join(",")}
-        aria-label="选择图片文件"
+        aria-label={t("dropzone.inputLabel")}
         onChange={(event) => {
           const files = Array.from(event.target.files ?? [])
           event.target.value = ""

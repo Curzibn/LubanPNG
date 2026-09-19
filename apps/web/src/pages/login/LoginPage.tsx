@@ -1,11 +1,13 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router"
 import { ErrorCode, errorMessage, isApiError, requestOtp, verifyOtp } from "../../api/client.ts"
-import { usePageTitle } from "../../app/usePageTitle.ts"
+import { usePageMeta } from "../../app/usePageMeta.ts"
 import { Button } from "../../components/Button.tsx"
 import { Container } from "../../components/Container.tsx"
 import { Eyebrow } from "../../components/Eyebrow.tsx"
 import { TextField } from "../../components/TextField.tsx"
+import { useI18n } from "../../i18n/I18nProvider.tsx"
+import { localizedPath } from "../../i18n/locale.ts"
 import { cx } from "../../lib/cx.ts"
 import { useSession } from "../../session/sessionContext.ts"
 import { OTP_LENGTH, OtpInput } from "./OtpInput.tsx"
@@ -13,21 +15,12 @@ import { useCountdown } from "./useCountdown.ts"
 
 const DEFAULT_RESEND_SECONDS = 60
 const DEFAULT_EXPIRES_SECONDS = 600
-const MAIL_UNAVAILABLE_MESSAGE = "邮件服务暂未开通，请稍后再试"
-const INVALID_EMAIL_MESSAGE = "请输入有效的邮箱地址"
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const safeNextPath = (raw: string | null): string => {
   if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/dashboard"
   return raw
-}
-
-const otpErrorMessage = (error: unknown): string => {
-  if (isApiError(error) && (error.status === 503 || error.code === ErrorCode.serviceUnconfigured)) {
-    return MAIL_UNAVAILABLE_MESSAGE
-  }
-  return errorMessage(error, "发送失败，请稍后再试")
 }
 
 type Step = "email" | "code"
@@ -63,11 +56,12 @@ const StepCard = ({
 )
 
 export const LoginPage = () => {
-  usePageTitle("登录")
+  const { locale, t } = useI18n()
+  usePageMeta("login")
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const session = useSession()
-  const nextPath = safeNextPath(searchParams.get("next"))
+  const nextPath = localizedPath(safeNextPath(searchParams.get("next")), locale)
 
   const [step, setStep] = useState<Step>("email")
   const [email, setEmail] = useState("")
@@ -84,10 +78,17 @@ export const LoginPage = () => {
     if (session.status === "ready" && session.signedIn) navigate(nextPath, { replace: true })
   }, [session.status, session.signedIn, navigate, nextPath])
 
+  const otpErrorMessage = (error: unknown): string => {
+    if (isApiError(error) && (error.status === 503 || error.code === ErrorCode.serviceUnconfigured)) {
+      return t("login.error.mailUnavailable")
+    }
+    return errorMessage(error, t("login.error.sendFailed"))
+  }
+
   const sendCode = async () => {
     const trimmed = email.trim()
     if (!emailPattern.test(trimmed)) {
-      setEmailError(INVALID_EMAIL_MESSAGE)
+      setEmailError(t("login.error.invalidEmail"))
       return
     }
     setEmailError(null)
@@ -123,7 +124,7 @@ export const LoginPage = () => {
       await session.refresh()
       navigate(nextPath, { replace: true })
     } catch (error) {
-      setCodeError(errorMessage(error, "验证失败，请重试"))
+      setCodeError(errorMessage(error, t("login.error.verifyFailed")))
       setCode("")
     } finally {
       setVerifying(false)
@@ -133,7 +134,7 @@ export const LoginPage = () => {
   const handleCodeSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (code.length !== OTP_LENGTH) {
-      setCodeError(`请输入 ${OTP_LENGTH} 位验证码`)
+      setCodeError(t("login.error.codeLength", { count: OTP_LENGTH }))
       return
     }
     void verify(code)
@@ -144,14 +145,14 @@ export const LoginPage = () => {
       <div className="flex flex-col items-center gap-6 lg:flex-row lg:items-start lg:justify-center lg:gap-12">
         <StepCard
           active={step === "email"}
-          eyebrow="第一步"
-          title="登录或注册"
-          description="不设密码。输入邮箱，我们发一个 6 位验证码。"
+          eyebrow={t("login.step1")}
+          title={t("login.title.email")}
+          description={t("login.desc.email")}
         >
           <form onSubmit={handleEmailSubmit} noValidate className="flex flex-col gap-6">
             <TextField
               id="login-email"
-              label="邮箱"
+              label={t("login.email")}
               type="email"
               name="email"
               autoComplete="email"
@@ -164,33 +165,34 @@ export const LoginPage = () => {
               required
             />
             <Button type="submit" variant="ink" size="xl" disabled={sending || step === "code"} className="w-full">
-              {sending ? "发送中…" : "发送验证码"}
+              {sending ? t("login.sending") : t("login.send")}
             </Button>
             <p className="text-label-sm leading-prose text-ink-secondary">
-              继续即表示同意{" "}
-              <Link to="/terms" className="text-vermilion hover:text-vermilion-hover">
-                服务条款
+              {t("login.terms.prefix")}{" "}
+              <Link to={localizedPath("/terms", locale)} className="text-vermilion hover:text-vermilion-hover">
+                {t("login.terms.link")}
               </Link>{" "}
-              与{" "}
-              <Link to="/privacy" className="text-vermilion hover:text-vermilion-hover">
-                隐私政策
+              {t("login.terms.and")}{" "}
+              <Link to={localizedPath("/privacy", locale)} className="text-vermilion hover:text-vermilion-hover">
+                {t("login.terms.privacy")}
               </Link>
-              。首次登录自动创建账号，赠送每月 50 次压缩。
+              {t("login.terms.suffix")}
             </p>
           </form>
         </StepCard>
 
         <StepCard
           active={step === "code"}
-          eyebrow="第二步"
-          title="输入验证码"
+          eyebrow={t("login.step2")}
+          title={t("login.code.title")}
           description={
             step === "code" ? (
               <>
-                已发送到 <span className="font-mono text-ink">{email}</span>，{expiresMinutes} 分钟内有效。
+                {t("login.code.sentPrefix")} <span className="font-mono text-ink">{email}</span>
+                {t("login.code.sentSuffix", { minutes: expiresMinutes })}
               </>
             ) : (
-              "发送验证码后，在这里输入邮件里的 6 位数字。"
+              t("login.code.idle")
             )
           }
         >
@@ -211,20 +213,20 @@ export const LoginPage = () => {
               </p>
             )}
             <Button type="submit" variant="ink" size="xl" disabled={step !== "code" || verifying} className="w-full">
-              {verifying ? "登录中…" : "登录"}
+              {verifying ? t("login.signingIn") : t("login.signIn")}
             </Button>
             <div className="flex flex-wrap items-center justify-between gap-2 text-label text-ink-secondary">
               <span>
-                没收到？
+                {t("login.noCode")}
                 <button
                   type="button"
                   onClick={() => void sendCode()}
                   disabled={sending || resendSeconds > 0}
                   className="text-vermilion transition-colors hover:text-vermilion-hover disabled:cursor-default disabled:text-ink-secondary"
                 >
-                  重新发送
+                  {t("login.resend")}
                 </button>
-                {resendSeconds > 0 && `（${resendSeconds} 秒）`}
+                {resendSeconds > 0 && t("login.resendIn", { seconds: resendSeconds })}
               </span>
               <button
                 type="button"
@@ -235,15 +237,13 @@ export const LoginPage = () => {
                 }}
                 className="text-vermilion transition-colors hover:text-vermilion-hover"
               >
-                换个邮箱
+                {t("login.changeEmail")}
               </button>
             </div>
           </form>
         </StepCard>
       </div>
-      <p className="pt-8 text-center text-label text-ink-secondary md:pt-10">
-        同一邮箱 10 分钟内最多申请 3 次验证码，连续错 5 次需重新申请。
-      </p>
+      <p className="pt-8 text-center text-label text-ink-secondary md:pt-10">{t("login.limitNote")}</p>
     </Container>
   )
 }
