@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { afterAll, describe, expect, it, vi } from "vitest"
 import {
   acceptLanguage,
   detectBrowserLocale,
@@ -7,6 +7,7 @@ import {
   localeFromPath,
   localizedPath,
   parseStoredLocale,
+  requestLocale,
   stripLocalePrefix,
   switchLocaleHref,
 } from "./locale.ts"
@@ -107,7 +108,19 @@ describe("initialRedirectTarget", () => {
 })
 
 describe("acceptLanguage", () => {
+  afterAll(() => {
+    vi.unstubAllGlobals()
+  })
+
   it("defaults to Chinese outside the browser", () => {
+    expect(acceptLanguage()).toBe("zh-CN")
+  })
+
+  it("follows the language of the current URL", () => {
+    vi.stubGlobal("window", { location: { pathname: "/en/pricing" } })
+    expect(requestLocale()).toBe("en")
+    expect(acceptLanguage()).toBe("en")
+    vi.stubGlobal("window", { location: { pathname: "/pricing" } })
     expect(acceptLanguage()).toBe("zh-CN")
   })
 })
