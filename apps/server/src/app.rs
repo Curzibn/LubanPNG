@@ -23,7 +23,7 @@ use crate::services::quota::QuotaService;
 use crate::services::upscale::UpscaleService;
 use crate::services::worker;
 use crate::shells::{serve_static_shell, ShellTable};
-use axum::extract::{DefaultBodyLimit, State};
+use axum::extract::{DefaultBodyLimit, Extension, State};
 use axum::http::{header, HeaderMap, StatusCode, Uri};
 use axum::middleware::from_fn_with_state;
 use axum::response::{IntoResponse, Response};
@@ -47,6 +47,19 @@ async fn unknown_api_path(headers: HeaderMap) -> AppError {
 }
 
 type SpaIndex = Arc<String>;
+
+type LlmsIndex = Arc<String>;
+
+async fn serve_llms(Extension(content): Extension<LlmsIndex>) -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "text/markdown; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        content.as_ref().clone(),
+    )
+        .into_response()
+}
 
 async fn serve_spa(uri: Uri, State(index): State<SpaIndex>) -> Response {
     let last_segment = uri.path().rsplit('/').next().unwrap_or_default();
@@ -276,6 +289,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     if static_dir.is_dir() {
         let index_path = static_dir.join("index.html");
         let index = std::fs::read_to_string(&index_path).unwrap_or_default();
+        if let Ok(llms) = std::fs::read_to_string(static_dir.join("llms.txt")) {
+            let llms: LlmsIndex = Arc::new(llms);
+            router = router.route("/llms.txt", get(serve_llms).layer(Extension(llms)));
+        }
         let spa = Router::new()
             .fallback(serve_spa)
             .with_state(Arc::new(index));

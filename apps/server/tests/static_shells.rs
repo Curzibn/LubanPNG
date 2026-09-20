@@ -261,3 +261,45 @@ async fn keeps_existing_spa_and_not_found_semantics() {
 
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[tokio::test]
+async fn serves_llms_txt_as_markdown_when_present() {
+    let dir = fixture_dir("llms");
+    std::fs::write(dir.join("index.html"), SPA_INDEX).unwrap();
+    std::fs::write(
+        dir.join("llms.txt"),
+        "# LubanPNG\n\n> compression and upscaling · 压缩与放大\n",
+    )
+    .unwrap();
+    let router = router_with_static(&dir);
+
+    let (status, headers, body) = fetch(&router, "/llms.txt").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        headers[header::CONTENT_TYPE],
+        "text/markdown; charset=utf-8"
+    );
+    assert_eq!(
+        text(&body),
+        "# LubanPNG\n\n> compression and upscaling · 压缩与放大\n"
+    );
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn keeps_not_found_semantics_for_llms_txt_when_absent() {
+    let dir = fixture_dir("llms-absent");
+    std::fs::write(dir.join("index.html"), SPA_INDEX).unwrap();
+    let router = router_with_static(&dir);
+
+    let (status, headers, body) = fetch(&router, "/llms.txt").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(headers[header::CONTENT_TYPE]
+        .to_str()
+        .unwrap()
+        .starts_with("text/plain"));
+    assert_eq!(text(&body), "Not Found");
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}

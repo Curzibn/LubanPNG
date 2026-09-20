@@ -66,6 +66,27 @@ describe("dictionaries", () => {
     expect(en["dev.quota.body"]).toContain("charged")
   })
 
+  it("documents the upscale limits and billing in the developer copy", () => {
+    expect(zhCN["dev.upscale.billing"]).toContain("不计次")
+    expect(zhCN["dev.upscale.billing"]).toContain("共用同一份额度")
+    expect(en["dev.upscale.billing"]).toContain("never charged")
+    expect(en["dev.upscale.billing"]).toContain("same pool")
+    for (const value of [zhCN["dev.upscale.limits.sizeValue"], en["dev.upscale.limits.sizeValue"]]) {
+      expect(value).toContain("20 MB")
+    }
+    for (const value of [zhCN["dev.upscale.limits.scaleValue"], en["dev.upscale.limits.scaleValue"]]) {
+      expect(value).toContain("x2")
+      expect(value).toContain("x4")
+    }
+  })
+
+  it("keeps the planned agent channels marked as planned, not available", () => {
+    expect(zhCN["dev.agents.mcpStatus"]).toBe("规划中")
+    expect(zhCN["dev.agents.x402Status"]).toBe("规划中")
+    expect(en["dev.agents.mcpStatus"]).toBe("Planned")
+    expect(en["dev.agents.x402Status"]).toBe("Planned")
+  })
+
   it("never promises a saving the measurements do not support", () => {
     const banned = [/\bhalf or more\b/i, /\bhalve(s|d)?\b/i, /削掉一半/, /缩小一半/, /一半以上/, /无差别/, /肉眼无差/, /no visible difference/i]
     for (const [locale, dictionary] of Object.entries(messages)) {

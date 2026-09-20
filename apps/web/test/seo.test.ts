@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest"
 const publicDir = join(dirname(fileURLToPath(import.meta.url)), "..", "public")
 const sitemap = readFileSync(join(publicDir, "sitemap.xml"), "utf8")
 const robots = readFileSync(join(publicDir, "robots.txt"), "utf8")
+const llms = readFileSync(join(publicDir, "llms.txt"), "utf8")
 
 const locs = Array.from(sitemap.matchAll(/<loc>([^<]+)<\/loc>/g), (match) => match[1] ?? "")
 
@@ -43,5 +44,21 @@ describe("robots", () => {
       expect(robots).toContain(`Disallow: ${path}\n`)
     }
     expect(robots).toContain("Sitemap: https://lubanpng.wizthink.cn/sitemap.xml")
+  })
+})
+
+describe("llms.txt", () => {
+  it("covers both capabilities", () => {
+    expect(llms).toMatch(/^# LubanPNG\n/)
+    expect(llms).toContain("Compression")
+    expect(llms).toContain("Upscaling")
+    expect(llms).toContain("压缩")
+    expect(llms).toContain("放大")
+  })
+
+  it("lists the three access channels and marks the unshipped ones as planned", () => {
+    expect(llms).toContain("REST + API key")
+    expect(llms).toContain("MCP server (planned, not yet available)")
+    expect(llms).toContain("x402 pay-per-call (planned, not yet available)")
   })
 })

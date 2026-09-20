@@ -16,7 +16,9 @@ const sections = [
   { id: "quickstart", labelKey: "dev.section.quickstart" },
   { id: "endpoints", labelKey: "dev.section.endpoints" },
   { id: "convert", labelKey: "dev.section.convert" },
+  { id: "upscale", labelKey: "dev.section.upscale" },
   { id: "quota", labelKey: "dev.section.quota" },
+  { id: "agents", labelKey: "dev.section.agents" },
   { id: "cli", labelKey: "dev.section.cli" },
 ] as const satisfies ReadonlyArray<{ id: string; labelKey: MessageKey }>
 
@@ -116,6 +118,7 @@ const Prose = ({ children }: { children: ReactNode }) => <p className="text-body
 
 const endpointRows: ReadonlyArray<{ method: string; path: string; purposeKey: MessageKey; authKey: MessageKey }> = [
   { method: "POST", path: "/v1/images/compress", purposeKey: "dev.endpoints.p1", authKey: "dev.auth.keySessionAnon" },
+  { method: "POST", path: "/v1/images/upscale", purposeKey: "dev.endpoints.upscale", authKey: "dev.auth.keySessionAnon" },
   { method: "GET", path: "/v1/images/compress/{task_id}", purposeKey: "dev.endpoints.p2", authKey: "dev.auth.same" },
   { method: "GET", path: "/v1/images/download/{filename}", purposeKey: "dev.endpoints.p3", authKey: "dev.auth.same" },
   { method: "GET", path: "/v1/me", purposeKey: "dev.endpoints.p4", authKey: "dev.auth.same" },
@@ -171,6 +174,41 @@ const convertSample = (origin: string) =>
     '    "output_format": "jpeg", "quota_units": 2,',
     '    "compressed_url": "/v1/images/download/550e8400-….jpg" } }',
   ].join("\n")
+
+const upscaleSample = (origin: string) =>
+  [
+    `curl -X POST ${origin}/v1/images/upscale \\`,
+    '  -H "Authorization: Bearer lp_live_…" \\',
+    '  -F "file=@logo.png" \\',
+    '  -F "scale=x2"',
+    "",
+    '{ "code": 0, "msg": "success", "data": { "task_id": "550e8400-…" } }',
+  ].join("\n")
+
+const upscaleStatusSample = (origin: string) =>
+  [
+    `curl "${origin}/v1/images/compress/550e8400-…?wait=30" \\`,
+    '  -H "Authorization: Bearer lp_live_…"',
+    "",
+    '{ "code": 0, "data": { "status": "completed", "kind": "upscale",',
+    '    "scale": "x2", "original_size": 398829, "compressed_size": 1194351,',
+    '    "output_format": "png", "quota_units": 1, "no_gain": false,',
+    '    "compressed_url": "/v1/images/download/550e8400-….png" } }',
+  ].join("\n")
+
+const upscaleLimitRows: ReadonlyArray<{ itemKey: MessageKey; valueKey: MessageKey }> = [
+  { itemKey: "dev.upscale.limits.input", valueKey: "dev.upscale.limits.inputValue" },
+  { itemKey: "dev.upscale.limits.scale", valueKey: "dev.upscale.limits.scaleValue" },
+  { itemKey: "dev.upscale.limits.size", valueKey: "dev.upscale.limits.sizeValue" },
+  { itemKey: "dev.upscale.limits.dimensions", valueKey: "dev.upscale.limits.dimensionsValue" },
+  { itemKey: "dev.upscale.limits.output", valueKey: "dev.upscale.limits.outputValue" },
+]
+
+const agentChannelRows: ReadonlyArray<{ channelKey: MessageKey; statusKey: MessageKey; noteKey: MessageKey }> = [
+  { channelKey: "dev.agents.rest", statusKey: "dev.agents.restStatus", noteKey: "dev.agents.restNote" },
+  { channelKey: "dev.agents.mcp", statusKey: "dev.agents.mcpStatus", noteKey: "dev.agents.mcpNote" },
+  { channelKey: "dev.agents.x402", statusKey: "dev.agents.x402Status", noteKey: "dev.agents.x402Note" },
+]
 
 const formatRows: ReadonlyArray<{
   format: string
@@ -275,6 +313,30 @@ export const DevelopersPage = () => {
             </Table>
           </Section>
 
+          <Section id="upscale" title={t("dev.section.upscale")}>
+            <Prose>{t("dev.upscale.body")}</Prose>
+            <CodeBlock label={t("dev.upscale.codeLabel")}>{upscaleSample(origin)}</CodeBlock>
+            <CodeBlock label={t("dev.upscale.statusLabel")}>{upscaleStatusSample(origin)}</CodeBlock>
+            <Table label={t("dev.upscale.limits.aria")}>
+              <thead>
+                <tr>
+                  <Th>{t("dev.upscale.limits.item")}</Th>
+                  <Th>{t("dev.upscale.limits.value")}</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {upscaleLimitRows.map((row) => (
+                  <tr key={row.itemKey}>
+                    <Td className="whitespace-nowrap text-ink-secondary">{t(row.itemKey)}</Td>
+                    <Td>{t(row.valueKey)}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+            <Prose>{t("dev.upscale.queue")}</Prose>
+            <Prose>{t("dev.upscale.billing")}</Prose>
+          </Section>
+
           <Section id="quota" title={t("dev.section.quota")}>
             <Prose>{t("dev.quota.body")}</Prose>
             <CodeBlock tone="panel" label={t("dev.quota.codeLabel")}>
@@ -294,6 +356,45 @@ export const DevelopersPage = () => {
                     <Td className="font-mono">{row.http}</Td>
                     <Td className="font-mono">{row.code}</Td>
                     <Td>{t(row.meaningKey)}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </Section>
+
+          <Section id="agents" title={t("dev.section.agents")}>
+            <Prose>{t("dev.agents.body")}</Prose>
+            <div className="flex flex-col gap-1 lg:flex-row lg:gap-6">
+              <a
+                href="/llms.txt"
+                className="flex min-h-control w-fit items-center text-ui text-vermilion hover:text-vermilion-hover lg:min-h-0"
+              >
+                {t("dev.agents.llms")}
+              </a>
+              <a
+                href="/api-doc/openapi.json"
+                target="_blank"
+                rel="noreferrer"
+                className="flex min-h-control w-fit items-center gap-1.5 text-ui text-vermilion hover:text-vermilion-hover lg:min-h-0"
+              >
+                {t("dev.agents.openapi")}
+                <ExternalLinkIcon label={t("dev.external")} className="size-3.5" />
+              </a>
+            </div>
+            <Table label={t("dev.agents.aria")}>
+              <thead>
+                <tr>
+                  <Th>{t("dev.agents.channel")}</Th>
+                  <Th>{t("dev.agents.status")}</Th>
+                  <Th>{t("dev.agents.note")}</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {agentChannelRows.map((row) => (
+                  <tr key={row.channelKey}>
+                    <Td className="whitespace-nowrap font-mono">{t(row.channelKey)}</Td>
+                    <Td className="whitespace-nowrap text-ink-secondary">{t(row.statusKey)}</Td>
+                    <Td className="text-ink-secondary">{t(row.noteKey)}</Td>
                   </tr>
                 ))}
               </tbody>

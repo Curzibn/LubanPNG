@@ -1,0 +1,47 @@
+# LubanPNG
+
+> LubanPNG (鲁班刨) is an image compression and upscaling service at https://lubanpng.wizthink.cn. Compress PNG, JPEG, GIF, WebP and AVIF images — static images can also convert between formats — and upscale PNG or JPEG images 2× or 4×. The web app, the REST API and the CLI share one quota pool.
+
+## Capabilities
+
+- **Compression** (available): input PNG, JPEG, GIF, WebP, AVIF; APNG, GIF and animated WebP keep their animation. Static images can convert to png, jpeg, webp or avif (a transparent image converted to JPEG needs a `#RRGGBB` background colour). Upload `POST /v1/images/compress` (multipart: `file`, optional `convert` and `background`), poll `GET /v1/images/compress/{task_id}?wait=30`, download `GET /v1/images/download/{filename}` (302 to a presigned URL, valid 10 minutes).
+- **Upscaling** (available): input static PNG or JPEG only; up to 2.25 MP, longest side 2048 px, 20 MB. Upload `POST /v1/images/upscale` (multipart: `file` + `scale=x2|x4`); the output is always PNG. Status polling and download use the same endpoints as compression.
+
+## Billing
+
+- Compression: one run is charged only when the output is actually smaller, plus 1 extra run when a format conversion is requested. Failures and no-gain results are never charged — without a conversion the original file is kept, with one the converted file is returned and still not charged.
+- Upscaling: a successful upscale costs 1 run — the output is by design larger than the input, so the "smaller output" rule does not apply to it. Failed upscales, timeouts and invalid input are never charged.
+- In the task status, `quota_units` is the amount actually charged (0 when nothing was charged) and `no_gain` is true exactly when nothing was charged.
+
+## Limits and queueing
+
+- Compression: up to 5 MB per image on the anonymous and free plans. Results from both capabilities are kept for 24 hours.
+- The upscaler runs one job at a time (single-flight GPU). While it is busy, uploads queue; beyond a queue depth of 10, `POST /v1/images/upscale` returns HTTP 429 with `Retry-After` and `queue_depth` in the error data. If the upscaler is unreachable, the upload returns HTTP 503.
+
+## Quota
+
+- Anonymous: 5 runs per day. Free account: 50 runs per month. Upscaling draws from the same pool. Responses on `/v1/images/*` and `/v1/me` carry `X-Quota-Limit`, `X-Quota-Remaining` and `X-Quota-Reset`.
+- Auth: `Authorization: Bearer lp_live_…` API key, or the anonymous device cookie the web app uses. Cookie-authenticated POSTs must send `X-Requested-With: LubanPNG`.
+
+## Access channels
+
+- REST + API key (available now) — create a key in the dashboard; anonymous credentials also work for browser flows.
+- MCP server (planned, not yet available) — will expose compression and upscaling as tools for agents.
+- x402 pay-per-call (planned, not yet available) — pay per call without an account.
+
+## Documentation
+
+- [OpenAPI document](https://lubanpng.wizthink.cn/api-doc/openapi.json): every endpoint, schema and error code.
+- [Developer docs](https://lubanpng.wizthink.cn/developers): quick start, formats, quota, upscaling and error codes.
+- [Swagger UI](https://lubanpng.wizthink.cn/swagger-ui): interactive reference.
+- [Web app](https://lubanpng.wizthink.cn/) · [English UI](https://lubanpng.wizthink.cn/en/)
+
+## 中文
+
+- **压缩**（可用）：输入 PNG、JPEG、GIF、WebP、AVIF；APNG、GIF 与动态 WebP 保留动画。静态图可转成 png、jpeg、webp 或 avif（透明图转 JPEG 需指定 `#RRGGBB` 背景色）。`POST /v1/images/compress`（multipart：`file`，可选 `convert`、`background`）上传，`GET /v1/images/compress/{task_id}?wait=30` 查询，`GET /v1/images/download/{filename}` 下载（302 到 10 分钟有效的预签名地址）。
+- **放大**（可用）：仅支持静态 PNG、JPEG；上限 2.25MP、单边 2048px、20MB。`POST /v1/images/upscale`（multipart：`file` + `scale=x2|x4`），产物固定为 PNG；查询与下载与压缩共用同一组端点。
+- **计次**：压缩只有真正产出更小文件才计 1 次（显式转换额外计 1 次），失败与没有变小的不计次；放大成功计 1 次（产物必然比原图大，不适用「更小才计次」），失败、超时与无效输入不计次。任务状态里 `quota_units` 是实扣次数，`no_gain` 为 true 当且仅当未计次。
+- **额度**：匿名每天 5 次，注册用户每月 50 次，放大与压缩共用同一份额度；`/v1/images/*` 与 `/v1/me` 响应带 `X-Quota-Limit`、`X-Quota-Remaining`、`X-Quota-Reset`。
+- **鉴权**：`Authorization: Bearer lp_live_…` API Key，或网页使用的匿名设备 Cookie；Cookie 鉴权的 POST 需带 `X-Requested-With: LubanPNG`。
+- **排队**：放大单飞（同一时刻只处理一个任务），繁忙时排队；队列深度超过 10 时 `POST /v1/images/upscale` 返回 429（错误数据带 `Retry-After` 与 `queue_depth`），放大服务不可达时提交返回 503。
+- **接入通道**：REST + API Key（可用）；MCP（规划中，未上线）；x402 按次付费（规划中，未上线）。
