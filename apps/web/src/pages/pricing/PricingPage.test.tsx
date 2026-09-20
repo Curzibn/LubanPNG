@@ -67,4 +67,13 @@ describe("pricing waitlist", () => {
     expect(html).toContain("Sign in to join the waitlist")
     expect(html).toContain('href="/en/login"')
   })
+
+  it("states the upscale billing rule on both language variants", () => {
+    const zh = renderPricing("/pricing", null)
+    expect(zh).toContain("放大怎么计次？")
+    expect(zh).toContain("「更小才计次」的规则不适用于放大")
+    const en = renderPricing("/en/pricing", null)
+    expect(en).toContain("How are upscales counted?")
+    expect(en).toContain("the \u201csmaller output\u201d rule does not apply to it")
+  })
 })

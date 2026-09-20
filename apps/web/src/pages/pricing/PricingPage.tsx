@@ -68,6 +68,7 @@ const plans: PlanCard[] = [
 
 const faqs = [
   { questionKey: "pricing.faq.q1", answerKey: "pricing.faq.a1" },
+  { questionKey: "pricing.faq.q5", answerKey: "pricing.faq.a5" },
   { questionKey: "pricing.faq.q2", answerKey: "pricing.faq.a2" },
   { questionKey: "pricing.faq.q3", answerKey: "pricing.faq.a3" },
   { questionKey: "pricing.faq.q4", answerKey: "pricing.faq.a4" },

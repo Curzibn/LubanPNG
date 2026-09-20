@@ -80,6 +80,22 @@ describe("dictionaries", () => {
     }
   })
 
+  it("explains upscale billing on the pricing page the same way the developer copy does", () => {
+    const zhKeys = ["pricing.lede", "pricing.faq.a5", "dev.upscale.billing"] as const
+    for (const key of zhKeys) {
+      expect(zhCN[key], `${key} zh`).toContain("更小才计次")
+      expect(zhCN[key], `${key} zh`).toContain("不计次")
+    }
+    expect(zhCN["pricing.faq.a5"]).toContain("共用同一份额度")
+    expect(zhCN["meta.pricing.description"]).toContain("放大成功计 1 次")
+
+    expect(en["pricing.lede"]).toContain("the \u201csmaller output\u201d rule does not apply to it")
+    expect(en["pricing.lede"]).toContain("never charged")
+    expect(en["pricing.faq.a5"]).toContain("the \u201csmaller output\u201d rule does not apply to it")
+    expect(en["pricing.faq.a5"]).toContain("same quota as compression")
+    expect(en["meta.pricing.description"]).toContain("a successful upscale costs 1 run")
+  })
+
   it("keeps the planned agent channels marked as planned, not available", () => {
     expect(zhCN["dev.agents.mcpStatus"]).toBe("规划中")
     expect(zhCN["dev.agents.x402Status"]).toBe("规划中")

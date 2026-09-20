@@ -149,7 +149,7 @@ export const en: Messages = {
 
   "pricing.title": "One quota pool, three doors",
   "pricing.lede":
-    "The web app, API and CLI run on the same quota. A run is only counted when the output actually gets smaller — failures and no-gain results never are.",
+    "The web app, API and CLI run on the same quota. A compression run is only counted when the output actually gets smaller — failures and no-gain results never are. A successful upscale costs 1 run — the output is by design larger than the input, so the \u201csmaller output\u201d rule does not apply to it. Failed upscales, timeouts and invalid input are never charged.",
   "pricing.free.eyebrow": "Free",
   "pricing.free.price": "¥0",
   "pricing.free.description": "Give it a try, or keep using it lightly.",
@@ -179,13 +179,15 @@ export const en: Messages = {
   "pricing.start": "Start for free",
   "pricing.faq.aria": "FAQ",
   "pricing.faq.q1": "Do failed compressions or no-gain results count against my quota?",
-  "pricing.faq.a1": "No. Failures never count, and neither do results that don't get smaller — the original is kept unless you convert, and an explicit conversion still returns the converted file even when it isn't smaller. Only output that actually shrinks counts as one run.",
+  "pricing.faq.a1": "No. Failures never count, and neither do results that don't get smaller — the original is kept unless you convert, and an explicit conversion still returns the converted file even when it isn't smaller. Only output that actually shrinks counts as one run. Upscaling is the exception to that rule — see below.",
   "pricing.faq.q2": "When does the quota reset?",
   "pricing.faq.a2": "Daily for signed-out visitors, monthly for accounts. The reset time is shown in your dashboard.",
   "pricing.faq.q3": "Do the web and the API share the same quota?",
   "pricing.faq.a3": "Yes — one account, one pool. Web, API and CLI all draw on it.",
   "pricing.faq.q4": "How do conversions count?",
   "pricing.faq.a4": "A conversion costs 1 extra run on top of the compression: compress and convert to WebP counts as 2. Converting to the source format counts as 1, and failed conversions never count.",
+  "pricing.faq.q5": "How are upscales counted?",
+  "pricing.faq.a5": "A successful upscale costs 1 run — the output is by design larger than the input, so the \u201csmaller output\u201d rule does not apply to it. Failed upscales, timeouts and invalid input are never charged. Upscaling draws on the same quota as compression.",
 
   "dev.title": "Developers",
   "dev.intro":
@@ -443,7 +445,7 @@ export const en: Messages = {
   "meta.home.description":
     "Compress PNG, JPEG, GIF, WebP and AVIF images online — static images convert formats, animations stay animated — and upscale PNG or JPEG 2× or 4×. Photos, screenshots and transparent PNGs save the most, while already-optimized files and most animations have little headroom; results that can't get smaller are never charged, and failed upscales are never charged either. One quota shared across web, API and CLI, free to use.",
   "meta.pricing.title": "Pricing · LubanPNG",
-  "meta.pricing.description": "One quota shared across web, API and CLI: 5 runs a day signed out, 50 a month signed in — counted only when the output really gets smaller. Pro and metered plans are in the works.",
+  "meta.pricing.description": "One quota shared across web, API and CLI: 5 runs a day signed out, 50 a month signed in. Compressions are counted only when the output really gets smaller; a successful upscale costs 1 run and failed upscales are never charged. Pro and metered plans are in the works.",
   "meta.developers.title": "Developers · LubanPNG",
   "meta.developers.description":
     "Wire image compression and upscaling into anything with three requests: upload, poll, download. Compression takes PNG, JPEG, GIF, WebP and AVIF plus format conversion; upscaling takes PNG / JPEG at 2× or 4× — all on a quota shared with the web app and CLI.",

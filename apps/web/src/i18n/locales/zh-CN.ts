@@ -141,7 +141,8 @@ export const zhCN = {
   "row.downloadAria": "下载 {name}",
 
   "pricing.title": "一个额度池，三个入口",
-  "pricing.lede": "网页、API、CLI 用的是同一份次数。只有真正产出更小文件才计一次，失败与无收益都不计。",
+  "pricing.lede":
+    "网页、API、CLI 用的是同一份次数。压缩只有真正产出更小文件才计一次，失败与无收益都不计；放大成功计 1 次——产物按设计会比原图大，所以「更小才计次」的规则不适用于放大，放大失败、超时与无效输入不计次。",
   "pricing.free.eyebrow": "免费",
   "pricing.free.price": "¥0",
   "pricing.free.description": "试一试，或者小量长期使用。",
@@ -171,13 +172,15 @@ export const zhCN = {
   "pricing.start": "免费开始",
   "pricing.faq.aria": "常见问题",
   "pricing.faq.q1": "压缩失败或没有变小会扣次数吗？",
-  "pricing.faq.a1": "都不会。压缩失败不计次；压缩后没有变小也不计次——未转换时保留原图，显式转换即使产物不小于原图也会返回转换结果。只有真正产出更小文件才计一次。",
+  "pricing.faq.a1": "都不会。压缩失败不计次；压缩后没有变小也不计次——未转换时保留原图，显式转换即使产物不小于原图也会返回转换结果。只有真正产出更小文件才计一次。放大是这条规则的例外，见「放大怎么计次？」。",
   "pricing.faq.q2": "次数什么时候重置？",
   "pricing.faq.a2": "未登录按天，注册用户按自然月，重置时间在工作台里可见。",
   "pricing.faq.q3": "网页和 API 分开算吗？",
   "pricing.faq.a3": "不分。一个账号一份次数，网页、API、CLI 共用。",
   "pricing.faq.q4": "格式转换怎么计？",
   "pricing.faq.a4": "在压缩之外额外计 1 次：一张图压缩并转成 WebP 共计 2 次。目标格式与原格式相同时只计 1 次，转换失败同样不计次。",
+  "pricing.faq.q5": "放大怎么计次？",
+  "pricing.faq.a5": "放大成功计 1 次——产物按设计会比原图大，所以「更小才计次」的规则不适用于放大；放大失败、超时、无效输入不计次。放大与压缩共用同一份额度。",
 
   "dev.title": "开发者",
   "dev.intro": "压缩与放大都是异步任务：上传拿到任务号，查询时可以让服务端等到完成再回，再下载产物。三个请求，任何语言都能接。",
@@ -426,7 +429,7 @@ export const zhCN = {
   "meta.home.description":
     "鲁班刨（LubanPNG）在线压缩 PNG、JPEG、GIF、WebP、AVIF 图片，静态图可转换格式，动图保留动画；也能把 PNG、JPEG 放大 2× 或 4×。照片、截图与透明 PNG 收益最大，已经压过的图与多数动图空间有限；压不小不计次数，放大失败同样不计次数。网页、API、CLI 共用一份额度，免费可用。",
   "meta.pricing.title": "定价 · LubanPNG",
-  "meta.pricing.description": "网页、API、CLI 共用一份额度：未登录每天 5 次，注册后每月 50 次，只有真正产出更小文件才计次；Pro 与按量套餐规划中。",
+  "meta.pricing.description": "网页、API、CLI 共用一份额度：未登录每天 5 次，注册后每月 50 次；压缩只有真正产出更小文件才计次，放大成功计 1 次且失败不计次；Pro 与按量套餐规划中。",
   "meta.developers.title": "开发者 · LubanPNG",
   "meta.developers.description": "上传、查询、下载三个请求接入图片压缩与放大 API：压缩支持 PNG、JPEG、GIF、WebP、AVIF 与格式转换，放大支持 PNG、JPEG 的 2× / 4×；网页、API、CLI 共用一份额度。",
   "meta.terms.title": "服务条款 · LubanPNG",

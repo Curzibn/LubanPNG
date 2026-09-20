@@ -1,10 +1,10 @@
 # LubanPNG（鲁班刨）
 
-**Shave image weight. Keep it sharp.** / 把图片刨薄，不伤画质。
+**Shave image weight. Keep it sharp. Upscale 2× / 4×.** / 把图片刨薄，不伤画质，也能放大 2×、4×。
 
 [English](#english) · [中文](#中文)
 
-TinyPNG-style image compression for PNG / JPEG / GIF / WebP / AVIF. Static images can convert formats, animations stay animated. Web, API and CLI share one quota.
+TinyPNG-style image compression for PNG / JPEG / GIF / WebP / AVIF, plus 2× / 4× upscaling for PNG and JPEG. Static images can convert formats, animations stay animated. Web, API and CLI share one quota.
 
 - Web: https://lubanpng.wizthink.cn/?utm_source=github&utm_medium=readme&utm_campaign=launch
 - CLI: `npm i -g lubanpng`
@@ -18,7 +18,7 @@ TinyPNG-style image compression for PNG / JPEG / GIF / WebP / AVIF. Static image
 
 ## English
 
-Online image compression in the spirit of TinyPNG, built on palette quantization and re-encoding: PNG gets quantized then polished losslessly; JPEG has its source quality recovered first, so already-light images are never re-compressed; GIF / APNG / animated WebP are quantized frame by frame with animations intact; WebP and AVIF are re-encoded under an SSIM quality floor.
+Online image compression in the spirit of TinyPNG, built on palette quantization and re-encoding: PNG gets quantized then polished losslessly; JPEG has its source quality recovered first, so already-light images are never re-compressed; GIF / APNG / animated WebP are quantized frame by frame with animations intact; WebP and AVIF are re-encoded under an SSIM quality floor. Static PNG and JPEG can also be upscaled 2× or 4× over the same API.
 
 Each format takes its own path rather than being resampled blindly: JPEG source quality is recovered before re-encoding and low-quality sources are skipped, PNG is quantized to a palette before a lossless pass, and a run whose result is not smaller keeps the original and is not charged. Large wins land where the format allows them — screenshots, photos and transparent PNGs shrink most, while already-optimized files and most animations have little headroom and are left alone rather than re-encoded badly.
 
@@ -30,6 +30,8 @@ Each format takes its own path rather than being resampled blindly: JPEG source 
 | Free account | 50 per month | 5 MB | 24 hours |
 
 You are only charged when the output is actually smaller. Failed compressions are free, and so is a run whose result is not smaller than the original: without a conversion request the original file is kept, with one the converted artifact is still returned, and in both cases no run is charged. (On a run that does produce a smaller file, an explicit format conversion costs 1 extra run; converting to the same format stays at 1.)
+
+Upscaling is the exception to that rule: a successful upscale costs 1 run — the output is by design larger than the input, so the "smaller output" rule does not apply to it. Failed upscales, timeouts and invalid input are never charged. Upscales draw on the same pool as compressions.
 
 ### CLI
 
@@ -107,7 +109,7 @@ MIT
 
 ## 中文
 
-TinyPNG 式在线图片压缩：支持 PNG、JPEG、GIF、WebP、AVIF，静态图可转换格式，动图保留动画。网页、API、CLI 共用一份额度。
+TinyPNG 式在线图片压缩：支持 PNG、JPEG、GIF、WebP、AVIF，静态图可转换格式，动图保留动画；PNG 与 JPEG 还能按 2×、4× 放大。网页、API、CLI 共用一份额度。
 
 - 在线使用：https://lubanpng.wizthink.cn/?utm_source=github&utm_medium=readme&utm_campaign=launch
 - API 文档：https://lubanpng.wizthink.cn/developers?utm_source=github&utm_medium=readme&utm_campaign=launch
@@ -117,6 +119,7 @@ TinyPNG 式在线图片压缩：支持 PNG、JPEG、GIF、WebP、AVIF，静态�
 - 按格式各走一套压缩策略：PNG 调色板量化 + 无损重编码；JPEG 先反推原图质量再决定下刀、SSIM 兜底；GIF / APNG / 动态 WebP 逐帧量化并保留动画；WebP 有损重编码 + SSIM 兜底；AVIF 用 AV1 重编码。
 - 格式转换：静态图可转成 WebP / AVIF / PNG / JPEG；透明图转 JPEG 需指定背景色。
 - 只对有效压缩计次：压缩失败不计，压完没变小也不计（未转换时保留原图；转换产物仍会返回但不计次）。
+- 图片放大：静态 PNG / JPEG 可按 2×、4× 放大，产物固定为 PNG；放大成功计 1 次，失败、超时与无效输入不计次。
 - 一个额度池三个入口：同一账号，网页、API、CLI 共用一份次数。
 - HEIC / HEIF：iPhone Safari 选图会自动转成 JPEG 上传；CLI 在 macOS 上先转 JPEG 再上传；API 不接受 HEIC。
 
@@ -127,7 +130,7 @@ TinyPNG 式在线图片压缩：支持 PNG、JPEG、GIF、WebP、AVIF，静态�
 | 未登录 | 每天 5 次 | 5 MB | 24 小时 |
 | 注册（免费） | 每月 50 次 | 5 MB | 24 小时 |
 
-只有真正产出更小文件才计一次；格式转换在压缩之外额外计 1 次，目标格式与原格式相同时只计 1 次。
+压缩只有真正产出更小文件才计一次；格式转换在压缩之外额外计 1 次，目标格式与原格式相同时只计 1 次。放大是这条规则的例外——放大成功计 1 次，产物按设计会比原图大，失败、超时与无效输入不计次，且与压缩共用同一份额度。
 
 ### 网页
 
