@@ -118,13 +118,3 @@ spec:
                 name: lubanpng
                 port:
                   name: http
-    - host: lubanpng.k8s.opus.wizthink.cn
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: lubanpng
-                port:
-                  name: http
