@@ -44,6 +44,27 @@ describe("dictionaries", () => {
       }
     }
   })
+
+  it("states the conversion caveat wherever the quota rule is explained", () => {
+    const keys = ["pricing.faq.a1", "results.note.left", "dev.quota.body", "legal.terms.p3"] as const
+    for (const key of keys) {
+      expect(zhCN[key], `${key} zh`).toContain("保留原图")
+      expect(zhCN[key], `${key} zh`).toContain("转换")
+      expect(en[key], `${key} en`).toContain("the original is kept")
+      expect(en[key], `${key} en`).toMatch(/convert/i)
+    }
+  })
+
+  it("documents the quota_units and no_gain contract in the developer copy", () => {
+    for (const dictionary of [zhCN, en]) {
+      expect(dictionary["dev.quota.body"]).toContain("quota_units")
+      expect(dictionary["dev.quota.body"]).toContain("no_gain")
+    }
+    expect(zhCN["dev.quota.body"]).toContain("预扣")
+    expect(zhCN["dev.quota.body"]).toContain("实扣")
+    expect(en["dev.quota.body"]).toContain("reserved")
+    expect(en["dev.quota.body"]).toContain("charged")
+  })
 })
 
 describe("translate", () => {

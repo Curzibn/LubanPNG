@@ -118,7 +118,7 @@ export const en: Messages = {
   "results.noProducts": "No downloadable results",
   "results.downloadAll": "Download all",
   "results.zipping": "Zipping…",
-  "results.note.left": "Failures and images that don't get smaller are never charged.",
+  "results.note.left": "Failures and images that don't get smaller are never charged (without conversion the original is kept; with conversion the converted file is returned).",
   "results.note.left.short": "Failures or no-gain are free",
   "results.note.right": "Results are kept for {hours} hours, then deleted automatically.",
   "results.note.right.short": "kept for {hours} h",
@@ -163,7 +163,7 @@ export const en: Messages = {
   "pricing.start": "Start for free",
   "pricing.faq.aria": "FAQ",
   "pricing.faq.q1": "Do failed compressions or no-gain results count against my quota?",
-  "pricing.faq.a1": "No. Failures never count, and neither do results that don't get smaller (the original is kept). Only output that actually shrinks counts as one run.",
+  "pricing.faq.a1": "No. Failures never count, and neither do results that don't get smaller — the original is kept unless you convert, and an explicit conversion still returns the converted file even when it isn't smaller. Only output that actually shrinks counts as one run.",
   "pricing.faq.q2": "When does the quota reset?",
   "pricing.faq.a2": "Daily for signed-out visitors, monthly for accounts. The reset time is shown in your dashboard.",
   "pricing.faq.q3": "Do the web and the API share the same quota?",
@@ -228,7 +228,7 @@ export const en: Messages = {
   "dev.format.heic.note":
     "The web app converts photos automatically when picked in Safari on iPhone; the CLI uses the system converter on macOS before uploading; direct API uploads return 1001",
   "dev.quota.body":
-    "Every response carries three quota headers. A run is counted only when the output really gets smaller; failures or results no smaller than the original (the original is kept) are refunded automatically; format conversion costs 1 extra run.",
+    "Every response carries three quota headers. A run is counted only when the output really gets smaller; failures or results that don't shrink are refunded automatically (the original is kept unless you convert, and an explicit conversion still returns the converted file even when it isn't smaller, but costs nothing); format conversion costs 1 extra run. In the task status, quota_units is the reserved estimate while the task is in flight and the runs actually charged once it reaches a terminal state; no_gain is true exactly when the task was not counted.",
   "dev.quota.codeLabel": "Quota response headers",
   "dev.errors.aria": "Error codes",
   "dev.errors.meaning": "Meaning",
@@ -370,7 +370,7 @@ export const en: Messages = {
     "LubanPNG is an image compression preview service: it accepts PNG, JPEG, GIF, WebP and AVIF images and returns smaller compressed results; static images can be converted to WebP, AVIF, PNG or JPEG on demand.",
   "legal.terms.p2": "Uploaded originals and compressed results are stored temporarily and deleted automatically after the retention period; the free plan keeps them for 24 hours.",
   "legal.terms.p3":
-    "Quota is set per plan: 5 runs a day signed out and 50 runs a month for registered users, shared across web, API and CLI. Failed compressions and results that don't get smaller (the original is kept) never count; a format conversion costs 1 extra run on top of the compression.",
+    "Quota is set per plan: 5 runs a day signed out and 50 runs a month for registered users, shared across web, API and CLI. Failed compressions and results that don't get smaller never count (the original is kept unless you convert, and an explicit conversion still returns the converted file even when it isn't smaller, but costs nothing); a format conversion costs 1 extra run on top of the compression.",
   "legal.terms.p4": "This service is in preview and provided as is, with no guarantee of availability, retention or compression results.",
   "legal.privacy.title": "Privacy Policy",
   "legal.privacy.p1": "Email is used only to send sign-in codes and identify your account. It is never used for marketing and never shared with third parties.",
