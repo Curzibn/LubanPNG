@@ -42,7 +42,7 @@ export const useCompressor = () => {
     (id: string) => {
       exhaustedRef.current = true
       setQuotaExhausted(true)
-      update(id, { stage: "failed", error: t("home.error.quota"), queuePosition: null })
+      update(id, { stage: "failed", error: t("home.error.quota"), queuePosition: null, noGain: true })
     },
     [t, update],
   )
@@ -72,12 +72,18 @@ export const useCompressor = () => {
               compressedSize: task.compressed_size,
               compressedUrl: task.compressed_url,
               quotaUnits: task.quota_units,
+              noGain: task.no_gain,
             })
             return
           }
           if (task.status === "failed") {
             applyQuota(quota)
-            update(id, { stage: "failed", queuePosition: null, error: task.error_msg || t("row.compressFailed") })
+            update(id, {
+              stage: "failed",
+              queuePosition: null,
+              error: task.error_msg || t("row.compressFailed"),
+              noGain: task.no_gain,
+            })
             return
           }
           update(id, {
@@ -130,6 +136,7 @@ export const useCompressor = () => {
           queuePosition: null,
           compressedSize: null,
           compressedUrl: null,
+          noGain: false,
           error: null,
         }
       })

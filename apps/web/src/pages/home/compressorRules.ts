@@ -120,6 +120,7 @@ export type CompressionItem = {
   format: ImageFormat
   target: TargetFormat | null
   quotaUnits: number
+  noGain: boolean
   originalSize: number
   stage: CompressionStage
   uploadRatio: number
@@ -138,24 +139,29 @@ export const isInFlight = (stage: CompressionStage): boolean =>
 export type BatchSummary = {
   total: number
   completed: number
+  noGain: number
   originalBytes: number
   compressedBytes: number
   savedBytes: number
   quotaUnits: number
+  conversionRuns: number
   inFlight: boolean
 }
 
 export const summarize = (items: CompressionItem[]): BatchSummary => {
   const done = items.filter((item) => item.stage === "completed" && item.compressedSize !== null)
-  const originalBytes = done.reduce((sum, item) => sum + item.originalSize, 0)
-  const compressedBytes = done.reduce((sum, item) => sum + (item.compressedSize ?? 0), 0)
+  const counted = done.filter((item) => !item.noGain)
+  const originalBytes = counted.reduce((sum, item) => sum + item.originalSize, 0)
+  const compressedBytes = counted.reduce((sum, item) => sum + (item.compressedSize ?? 0), 0)
   return {
     total: items.length,
     completed: done.length,
+    noGain: done.length - counted.length,
     originalBytes,
     compressedBytes,
     savedBytes: Math.max(0, originalBytes - compressedBytes),
-    quotaUnits: done.reduce((sum, item) => sum + item.quotaUnits, 0),
+    quotaUnits: counted.reduce((sum, item) => sum + item.quotaUnits, 0),
+    conversionRuns: counted.filter((item) => item.target !== null).length,
     inFlight: items.some((item) => isInFlight(item.stage)),
   }
 }

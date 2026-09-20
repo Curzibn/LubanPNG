@@ -91,6 +91,7 @@ const item = (overrides: Partial<CompressionItem>): CompressionItem => ({
   format: "PNG",
   target: null,
   quotaUnits: 1,
+  noGain: false,
   originalSize: 1000,
   stage: "completed",
   uploadRatio: 1,
@@ -102,22 +103,45 @@ const item = (overrides: Partial<CompressionItem>): CompressionItem => ({
 })
 
 describe("summarize", () => {
-  it("totals saved bytes and quota units over completed items only", () => {
+  it("totals saved bytes and quota units over counted items only", () => {
     const summary = summarize([
       item({ id: "a", originalSize: 2000, compressedSize: 500 }),
       item({ id: "b", stage: "processing", compressedSize: null, target: "webp", quotaUnits: 2 }),
-      item({ id: "c", stage: "failed", compressedSize: null }),
+      item({ id: "c", stage: "failed", compressedSize: null, noGain: true }),
       item({ id: "d", originalSize: 1000, compressedSize: 300, target: "avif", quotaUnits: 2 }),
     ])
     expect(summary).toEqual({
       total: 4,
       completed: 2,
+      noGain: 0,
       originalBytes: 3000,
       compressedBytes: 800,
       savedBytes: 2200,
       quotaUnits: 3,
+      conversionRuns: 1,
       inFlight: true,
     })
+  })
+
+  it("excludes no-gain completions from the charged total and counts them separately", () => {
+    const summary = summarize([
+      item({ id: "a", originalSize: 2000, compressedSize: 500 }),
+      item({ id: "b", originalSize: 1000, compressedSize: 1400, noGain: true, quotaUnits: 1 }),
+      item({ id: "c", originalSize: 1000, compressedSize: 1200, noGain: true, target: "webp", quotaUnits: 2 }),
+    ])
+    expect(summary.completed).toBe(3)
+    expect(summary.noGain).toBe(2)
+    expect(summary.quotaUnits).toBe(1)
+    expect(summary.conversionRuns).toBe(0)
+  })
+
+  it("reports conversion runs only for counted conversions", () => {
+    const summary = summarize([
+      item({ id: "a", originalSize: 2000, compressedSize: 500, target: "webp", quotaUnits: 2 }),
+      item({ id: "b", originalSize: 2000, compressedSize: 500, target: "jpeg", quotaUnits: 2 }),
+    ])
+    expect(summary.conversionRuns).toBe(2)
+    expect(summary.quotaUnits).toBe(4)
   })
 })
 

@@ -35,7 +35,7 @@ type Collected = { path: string; name: string; relative: string }
 type FileOutcome = {
   file: Collected
   ok: boolean
-  retained: boolean
+  noGain: boolean
   converted: string | null
   originalSize: number
   compressedSize: number
@@ -203,8 +203,9 @@ export const compressCommand = async (
       return
     }
     const compressed = pair.compressed.padStart(SIZE_COLUMN)
-    if (outcome.retained) {
-      context.io.write(`  ${name}  ${original} → ${compressed}   无收益，保留原图（不计次）\n`)
+    if (outcome.noGain) {
+      const note = outcome.converted === null ? "无收益，保留原图（不计次）" : `已转 ${outcome.converted}，体积未变小（不计次）`
+      context.io.write(`  ${name}  ${original} → ${compressed}   ${note}\n`)
       return
     }
     const percent = savingsPercent(outcome.originalSize, outcome.compressedSize)
@@ -217,7 +218,7 @@ export const compressCommand = async (
     const failure = (error: string): FileOutcome => ({
       file,
       ok: false,
-      retained: false,
+      noGain: true,
       converted: null,
       originalSize,
       compressedSize: 0,
@@ -242,20 +243,51 @@ export const compressCommand = async (
       if (view.status !== "completed" || view.compressed_url === null) {
         return failure(view.error_msg ?? "压缩失败")
       }
-      if (options.inPlace && view.compressed_size !== null && view.compressed_size >= originalSize) {
-        return { file, ok: true, retained: true, converted: null, originalSize, compressedSize: view.compressed_size, error: null }
+      if (view.no_gain) {
+        if (options.inPlace) {
+          const kept = await stat(file.path).catch(() => null)
+          const untouched = kept !== null && kept.size === originalSize
+          return {
+            file,
+            ok: untouched,
+            noGain: true,
+            converted: null,
+            originalSize,
+            compressedSize: view.compressed_size ?? originalSize,
+            error: untouched ? null : "原文件已被改写",
+          }
+        }
+        const bytes = await client.download(view.compressed_url)
+        const compressedSize = view.compressed_size ?? bytes.byteLength
+        const outputFormat = view.output_format ?? options.convert ?? null
+        const target = outputPathFor(file, options, outputFormat)
+        await mkdir(dirname(target), { recursive: true })
+        await writeFileAtomic(target, bytes)
+        return {
+          file,
+          ok: true,
+          noGain: true,
+          converted: view.target_format === null ? null : basename(target),
+          originalSize,
+          compressedSize,
+          error: null,
+        }
       }
       const bytes = await client.download(view.compressed_url)
       const compressedSize = view.compressed_size ?? bytes.byteLength
-      if (options.inPlace && compressedSize >= originalSize) {
-        return { file, ok: true, retained: true, converted: null, originalSize, compressedSize, error: null }
-      }
       const outputFormat = view.output_format ?? options.convert ?? null
       const target = outputPathFor(file, options, outputFormat)
       await mkdir(dirname(target), { recursive: true })
       await writeFileAtomic(target, bytes)
-      const converted = extname(target).toLowerCase() === extname(file.path).toLowerCase() ? null : basename(target)
-      return { file, ok: true, retained: false, converted, originalSize, compressedSize, error: null }
+      return {
+        file,
+        ok: true,
+        noGain: false,
+        converted: view.target_format === null ? null : basename(target),
+        originalSize,
+        compressedSize,
+        error: null,
+      }
     } catch (error) {
       return failure(describeError(error))
     } finally {
@@ -272,10 +304,10 @@ export const compressCommand = async (
 
   const succeeded = outcomes.filter((outcome) => outcome.ok)
   const failed = outcomes.filter((outcome) => !outcome.ok)
-  const retained = outcomes.filter((outcome) => outcome.retained)
-  const saved = succeeded.reduce(
+  const noGain = outcomes.filter((outcome) => outcome.ok && outcome.noGain)
+  const saved = outcomes.reduce(
     (total, outcome) =>
-      outcome.retained ? total : total + Math.max(0, outcome.originalSize - outcome.compressedSize),
+      outcome.ok && !outcome.noGain ? total + Math.max(0, outcome.originalSize - outcome.compressedSize) : total,
     0,
   )
   const parts = [
@@ -283,9 +315,12 @@ export const compressCommand = async (
     `节省 ${formatBytes(saved)}`,
     `${periodNoun(period)}剩余 ${remaining} 次`,
   ]
-  const converted = outcomes.filter((outcome) => outcome.converted !== null)
+  const converted = outcomes.filter((outcome) => outcome.ok && !outcome.noGain && outcome.converted !== null)
   if (converted.length > 0) parts.push(`${converted.length} 张已转换`)
-  if (retained.length > 0) parts.push(`${retained.length} 张无收益保留原图（不计次）`)
+  const convertedNoGain = noGain.filter((outcome) => outcome.converted !== null)
+  if (convertedNoGain.length > 0) parts.push(`${convertedNoGain.length} 张已转换但体积未变小（不计次）`)
+  const plainNoGain = noGain.length - convertedNoGain.length
+  if (plainNoGain > 0) parts.push(`${plainNoGain} 张无收益保留原图（不计次）`)
   if (failed.length > 0) parts.push(`${failed.length} 张失败`)
   context.io.write(`  ${parts.join("，")}\n`)
 

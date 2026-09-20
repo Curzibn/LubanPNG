@@ -7,25 +7,37 @@ import { ResultRow } from "./ResultRow.tsx"
 
 const Headline = ({ summary }: { summary: BatchSummary }) => {
   const { t } = useI18n()
-  if (summary.completed > 0) {
-    const percent = savingsPercent(summary.originalBytes, summary.compressedBytes)
+  if (summary.completed === 0) {
     return (
       <p className="text-ui md:text-body">
         {t("results.batch", { count: summary.total })} ·{" "}
-        <span className="md:hidden">{t("results.saved.mobile")}</span>
-        <span className="hidden md:inline">{t("results.saved.desktop")}</span>{" "}
-        <span className="font-mono font-semibold text-jade">{formatBytes(summary.savedBytes)}</span>
-        <span className="hidden text-ink-secondary md:inline">{t("results.percent", { percent })}</span>
-        {summary.quotaUnits > summary.completed && (
-          <span className="text-ink-secondary"> · {t("results.conversions", { count: summary.quotaUnits })}</span>
-        )}
+        <span className="text-ink-secondary">{summary.inFlight ? t("results.inFlight") : t("results.noProducts")}</span>
       </p>
     )
   }
+  const saved = summary.completed - summary.noGain
+  if (saved === 0) {
+    return (
+      <p className="text-ui md:text-body">
+        {t("results.batch", { count: summary.total })} ·{" "}
+        <span className="text-ink-secondary">{t("results.noGain", { count: summary.noGain })}</span>
+      </p>
+    )
+  }
+  const percent = savingsPercent(summary.originalBytes, summary.compressedBytes)
   return (
     <p className="text-ui md:text-body">
       {t("results.batch", { count: summary.total })} ·{" "}
-      <span className="text-ink-secondary">{summary.inFlight ? t("results.inFlight") : t("results.noProducts")}</span>
+      <span className="md:hidden">{t("results.saved.mobile")}</span>
+      <span className="hidden md:inline">{t("results.saved.desktop")}</span>{" "}
+      <span className="font-mono font-semibold text-jade">{formatBytes(summary.savedBytes)}</span>
+      <span className="hidden text-ink-secondary md:inline">{t("results.percent", { percent })}</span>
+      {summary.conversionRuns > 0 && (
+        <span className="text-ink-secondary"> · {t("results.charged", { count: summary.quotaUnits })}</span>
+      )}
+      {summary.noGain > 0 && (
+        <span className="text-ink-secondary"> · {t("results.noGain", { count: summary.noGain })}</span>
+      )}
     </p>
   )
 }

@@ -60,6 +60,7 @@ export type TaskStatus = {
   target_format: string | null
   output_format: string | null
   quota_units: number
+  no_gain: boolean
   error_msg: string | null
   created_at: number
   completed_at: number | null

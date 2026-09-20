@@ -65,6 +65,24 @@ describe("dictionaries", () => {
     expect(en["dev.quota.body"]).toContain("reserved")
     expect(en["dev.quota.body"]).toContain("charged")
   })
+
+  it("never promises a saving the measurements do not support", () => {
+    const banned = [/\bhalf or more\b/i, /\bhalve(s|d)?\b/i, /削掉一半/, /缩小一半/, /一半以上/, /无差别/, /肉眼无差/, /no visible difference/i]
+    for (const [locale, dictionary] of Object.entries(messages)) {
+      for (const [key, value] of Object.entries(dictionary)) {
+        for (const pattern of banned) {
+          expect(value, `${locale} ${key} must not overclaim a saving (${pattern})`).not.toMatch(pattern)
+        }
+      }
+    }
+  })
+
+  it("says per-format where the wins actually are", () => {
+    for (const dictionary of [zhCN, en]) {
+      expect(dictionary["home.lede.desktop"]).toMatch(/拍照|照片|screenshot|photo/i)
+      expect(dictionary["home.lede.desktop"]).toMatch(/already-optimized|压过/i)
+    }
+  })
 })
 
 describe("translate", () => {

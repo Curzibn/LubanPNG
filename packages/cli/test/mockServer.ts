@@ -53,6 +53,8 @@ const convertField = (body: string): string | null => {
 
 const extensionFor = (format: string | null): string => (format === "jpeg" ? "jpg" : format ?? "png")
 
+const ORIGINAL_SIZE = 4
+
 export const startMockServer = async (compressedBytes: Uint8Array): Promise<MockServer> => {
   const requests: RecordedRequest[] = []
   let lastConvert: string | null = null
@@ -106,12 +108,13 @@ export const startMockServer = async (compressedBytes: Uint8Array): Promise<Mock
           progress: 100,
           source: "cli",
           original_name: "photo.png",
-          original_size: 4,
+          original_size: ORIGINAL_SIZE,
           compressed_size: compressedBytes.byteLength,
           compressed_url: `/v1/images/download/compressed_photo.${extensionFor(lastConvert)}`,
           target_format: lastConvert,
           output_format: lastConvert ?? "png",
-          quota_units: lastConvert === null ? 1 : 2,
+          quota_units: compressedBytes.byteLength >= ORIGINAL_SIZE ? 0 : lastConvert === null ? 1 : 2,
+          no_gain: compressedBytes.byteLength >= ORIGINAL_SIZE,
           error_msg: null,
           created_at: 1_760_000_000,
           completed_at: 1_760_000_001,

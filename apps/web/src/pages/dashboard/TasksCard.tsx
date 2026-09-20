@@ -17,7 +17,12 @@ import {
 
 const sourceLabelKeys: Record<TaskSource, MessageKey> = { web: "tasks.source.web", api: "tasks.source.api", cli: "tasks.source.cli" }
 
-const statusDot: Record<TaskStatus, string> = {
+const statusDot = (task: TaskRecord): string => {
+  if (task.status === "completed" && task.no_gain) return "bg-ink-secondary"
+  return statusDotByStatus[task.status]
+}
+
+const statusDotByStatus: Record<TaskStatus, string> = {
   pending: "bg-amber",
   processing: "bg-amber",
   completed: "bg-jade",
@@ -27,7 +32,7 @@ const statusDot: Record<TaskStatus, string> = {
 const statusText = (task: TaskRecord, t: (key: MessageKey, params?: Record<string, string | number>) => string): string => {
   switch (task.status) {
     case "completed":
-      return t("tasks.status.done")
+      return task.no_gain ? `${t("tasks.status.done")} · ${t("tasks.noGain")}` : t("tasks.status.done")
     case "failed":
       return task.error_msg ? `${t("tasks.status.failed")} · ${task.error_msg}` : t("tasks.status.failed")
     case "processing":
@@ -122,7 +127,7 @@ export const TasksCard = ({ retentionHours }: { retentionHours: number }) => {
           )}
           {tasks?.map((task) => {
             const savings =
-              task.status === "completed" && task.compressed_size !== null
+              task.status === "completed" && task.compressed_size !== null && !task.no_gain
                 ? formatSavings(savingsPercent(task.original_size, task.compressed_size))
                 : null
             return (
@@ -145,7 +150,7 @@ export const TasksCard = ({ retentionHours }: { retentionHours: number }) => {
                 <Td className="whitespace-nowrap text-ink-secondary">{t(sourceLabelKeys[task.source])}</Td>
                 <Td className="whitespace-nowrap">
                   <span className="inline-flex items-center gap-1.5">
-                    <span className={cx("size-2 rounded-pill", statusDot[task.status])} aria-hidden="true" />
+                    <span className={cx("size-2 rounded-pill", statusDot(task))} aria-hidden="true" />
                     {statusText(task, t)}
                   </span>
                 </Td>

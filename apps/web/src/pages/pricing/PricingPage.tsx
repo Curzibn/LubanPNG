@@ -1,16 +1,14 @@
-import { useState } from "react"
-import { errorMessage, joinWaitlist, type WaitlistPlanId } from "../../api/client.ts"
+import { type WaitlistPlanId } from "../../api/client.ts"
 import { usePageMeta } from "../../app/usePageMeta.ts"
-import { Button, LinkButton } from "../../components/Button.tsx"
+import { LinkButton } from "../../components/Button.tsx"
 import { Container } from "../../components/Container.tsx"
 import { Eyebrow } from "../../components/Eyebrow.tsx"
 import { CheckIcon } from "../../components/icons.tsx"
-import { Notice } from "../../components/Notice.tsx"
+import { WaitlistButton } from "../../components/WaitlistButton.tsx"
 import { useI18n } from "../../i18n/I18nProvider.tsx"
 import { localizedPath } from "../../i18n/locale.ts"
 import type { MessageKey } from "../../i18n/messages.ts"
 import { cx } from "../../lib/cx.ts"
-import { useSession } from "../../session/sessionContext.ts"
 
 type FreePlanCard = {
   id: "free"
@@ -75,52 +73,6 @@ const faqs = [
   { questionKey: "pricing.faq.q4", answerKey: "pricing.faq.a4" },
 ] as const satisfies ReadonlyArray<{ questionKey: MessageKey; answerKey: MessageKey }>
 
-const WaitlistAction = ({ planId, dark }: { planId: WaitlistPlanId; dark: boolean }) => {
-  const { t } = useI18n()
-  const { signedIn } = useSession()
-  const [joined, setJoined] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const handleJoin = async () => {
-    setSubmitting(true)
-    try {
-      await joinWaitlist(planId)
-      setJoined(true)
-      setError(null)
-    } catch (joinError) {
-      setError(errorMessage(joinError, t("pricing.waitlist.error")))
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  if (!signedIn) {
-    return (
-      <div className="mt-auto flex w-full flex-col gap-2">
-        <Button variant={dark ? "outlineNight" : "outline"} size="lg" className="w-full" disabled>
-          {t("pricing.waitlist.disabled")}
-        </Button>
-      </div>
-    )
-  }
-
-  return (
-    <div className="mt-auto flex w-full flex-col gap-2">
-      {error && <Notice tone="error">{error}</Notice>}
-      <Button
-        variant={joined ? (dark ? "outlineNight" : "outline") : "accent"}
-        size="lg"
-        className="w-full"
-        disabled={submitting || joined}
-        onClick={() => void handleJoin()}
-      >
-        {joined ? t("pricing.waitlist.joined") : submitting ? t("pricing.waitlist.submitting") : t("pricing.waitlist.join")}
-      </Button>
-    </div>
-  )
-}
-
 const PlanCardView = ({ plan }: { plan: PlanCard }) => {
   const { locale, t } = useI18n()
   const dark = plan.waitlist ? plan.dark : false
@@ -160,7 +112,7 @@ const PlanCardView = ({ plan }: { plan: PlanCard }) => {
         ))}
       </ul>
       {plan.waitlist ? (
-        <WaitlistAction planId={plan.id} dark={dark} />
+        <WaitlistButton planId={plan.id} dark={dark} className="mt-auto" />
       ) : (
         <LinkButton to={localizedPath("/", locale)} variant="outline" size="lg" className="mt-auto w-full">
           {t("pricing.start")}

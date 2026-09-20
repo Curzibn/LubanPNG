@@ -144,6 +144,30 @@ describe("compressCommand", () => {
     const text = output.join("")
     expect(text).toContain("无收益，保留原图（不计次）")
     expect(text).toContain("1 张无收益保留原图（不计次）")
+    expect(text).not.toContain("已转换")
+  })
+
+  it("reports a converted product that did not get smaller without claiming a saving", async () => {
+    const output: string[] = []
+    const code = await compressCommand(
+      { apiBase: growingServer.baseUrl, env: { LUBANPNG_API_KEY: "lp_test_key" }, io: collectingIo(output) },
+      {
+        paths: [join(root, "images", "photo.png")],
+        out: join(root, "dist"),
+        inPlace: false,
+        recursive: false,
+        concurrency: 1,
+        convert: "webp",
+      },
+    )
+    expect(code).toBe(0)
+    const saved = await readFile(join(root, "dist", "photo.webp"))
+    expect(Array.from(saved)).toEqual(Array.from(LARGER_THAN_SOURCE))
+    const text = output.join("")
+    expect(text).toContain("已转 photo.webp，体积未变小（不计次）")
+    expect(text).toContain("1 张已转换但体积未变小（不计次）")
+    expect(text).not.toContain("无收益保留原图")
+    expect(text).not.toContain("1 张已转换，")
   })
 
   it("rejects --out collisions from same-named inputs", async () => {

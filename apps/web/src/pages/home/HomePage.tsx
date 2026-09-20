@@ -1,9 +1,11 @@
 import { Link } from "react-router"
 import { fetchCompressedBlob } from "../../api/client.ts"
 import { usePageMeta } from "../../app/usePageMeta.ts"
+import { LinkButton } from "../../components/Button.tsx"
 import { Container } from "../../components/Container.tsx"
 import { Eyebrow } from "../../components/Eyebrow.tsx"
 import { Notice } from "../../components/Notice.tsx"
+import { WaitlistButton } from "../../components/WaitlistButton.tsx"
 import { useI18n } from "../../i18n/I18nProvider.tsx"
 import { localizedPath } from "../../i18n/locale.ts"
 import { downloadAllAsZip, openLinkInBrowser, saveBlobInBrowser } from "../../lib/download.ts"
@@ -37,16 +39,40 @@ const QuotaExhaustedNotice = ({ anonymous }: { anonymous: boolean }) => {
   const { locale, t } = useI18n()
   return (
     <Notice tone="warning">
-      {anonymous ? (
-        <>
-          {t("home.quota.anonymous.lead")}{" "}
-          <Link to={localizedPath("/login", locale)} className="text-vermilion hover:text-vermilion-hover">
+      <p>{anonymous ? t("home.quota.anonymous.lead") : t("home.quota.account.lead")}</p>
+      <p className="mt-1 text-ink-secondary">{anonymous ? t("home.quota.anonymous.body") : t("home.quota.account.body")}</p>
+      <div className="mt-3">
+        {anonymous ? (
+          <LinkButton to={localizedPath("/login", locale)} variant="accent" size="md">
             {t("home.quota.anonymous.action")}
-          </Link>
-        </>
-      ) : (
-        t("home.quota.account")
-      )}
+          </LinkButton>
+        ) : (
+          <WaitlistButton planId="pro" size="md" className="max-w-aside" />
+        )}
+      </div>
+    </Notice>
+  )
+}
+
+const LOW_QUOTA_THRESHOLD = 2
+
+const LowQuotaNotice = ({ anonymous, remaining }: { anonymous: boolean; remaining: number }) => {
+  const { locale, t } = useI18n()
+  if (!anonymous) {
+    return (
+      <Notice tone="info">
+        <p>{t("quota.low.account", { remaining, count: remaining })}</p>
+      </Notice>
+    )
+  }
+  return (
+    <Notice tone="info">
+      <p>
+        {t("quota.low.anon", { remaining, count: remaining })}{" "}
+        <Link to={localizedPath("/login", locale)} className="text-vermilion hover:text-vermilion-hover">
+          {t("quota.low.anon.action")}
+        </Link>
+      </p>
     </Notice>
   )
 }
@@ -56,6 +82,10 @@ export const HomePage = () => {
   const { t } = useI18n()
   const { me } = useSession()
   const compressor = useCompressor()
+  const anonymous = me?.subject !== "account"
+  const remaining = me?.quota.remaining ?? null
+  const exhausted = compressor.quotaExhausted || remaining === 0
+  const lowQuota = !exhausted && remaining !== null && remaining <= LOW_QUOTA_THRESHOLD
 
   const handleDownloadAll = async () => {
     const items = downloadableItems(compressor.items)
@@ -81,7 +111,11 @@ export const HomePage = () => {
             <QuotaChip />
           </Dropzone>
           <OutputPicker value={compressor.output} onChange={compressor.setOutput} />
-          {compressor.quotaExhausted && <QuotaExhaustedNotice anonymous={me?.subject !== "account"} />}
+          {exhausted ? (
+            <QuotaExhaustedNotice anonymous={anonymous} />
+          ) : (
+            lowQuota && <LowQuotaNotice anonymous={anonymous} remaining={remaining} />
+          )}
           {compressor.batchNotice && (
             <Notice tone="info" onDismiss={compressor.dismissNotices}>
               {compressor.batchNotice}

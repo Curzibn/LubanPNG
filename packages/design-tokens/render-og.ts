@@ -34,7 +34,7 @@ const locales: OgLocale[] = [
     mark: "鲁",
     eyebrow: "PNG · JPEG · GIF · WebP · AVIF 智能压缩",
     headline: "把图片刨薄，不伤画质。",
-    lede: "调色板量化与重编码把体积削掉一半以上，肉眼看不出差别。",
+    lede: "照片、截图与透明 PNG 收益最大；已经压过的图与多数动图空间有限，压不小就原样保留、不计次数。",
     chips: ["网页", "API", "CLI"],
   },
   {
@@ -43,7 +43,7 @@ const locales: OgLocale[] = [
     mark: "L",
     eyebrow: "PNG · JPEG · GIF · WebP · AVIF smart compression",
     headline: "Shave image weight. Keep it sharp.",
-    lede: "Palette quantization and re-encoding cut file size by half or more — with no visible difference.",
+    lede: "Photos, screenshots and transparent PNGs save the most; already-optimized files and most animations have little headroom and are never charged.",
     chips: ["Web", "API", "CLI"],
   },
 ]

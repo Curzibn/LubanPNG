@@ -11,6 +11,9 @@ const StatusPill = ({ item }: { item: CompressionItem }) => {
   const { t } = useI18n()
   switch (item.stage) {
     case "completed":
+      if (item.noGain) {
+        return <span className={cx(pillClass, "bg-panel text-ink-secondary")}>{t("row.noGain")}</span>
+      }
       return (
         <span className={cx(pillClass, "bg-jade-soft text-jade")}>
           {item.compressedSize === null ? t("row.done") : formatSavings(savingsPercent(item.originalSize, item.compressedSize))}
@@ -58,6 +61,7 @@ const Sizes = ({ item }: { item: CompressionItem }) => {
 const barFill = (item: CompressionItem): { className: string; width: number } => {
   switch (item.stage) {
     case "completed":
+      if (item.noGain) return { className: "bg-ink-secondary", width: 100 }
       return { className: "bg-jade", width: item.compressedSize === null ? 100 : compressedRatioPercent(item.originalSize, item.compressedSize) }
     case "uploading":
       return { className: "bg-ink", width: Math.round(item.uploadRatio * 100) }
