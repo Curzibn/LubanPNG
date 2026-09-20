@@ -315,7 +315,7 @@ export const zhCN = {
   "keys.col.lastUsed": "最近使用",
   "keys.col.actions": "操作",
   "keys.loading": "加载中…",
-  "keys.empty": "还没有 Key。新建一个，就能在 API 里使用同一份额度；CLI 发布后也共用这一份。",
+  "keys.empty": "还没有 Key。新建一个，就能在 API 里使用同一份额度；CLI 也共用这一份。",
   "keys.never": "从未",
   "keys.revoke": "吊销",
   "keys.revoking": "吊销中…",
@@ -323,7 +323,7 @@ export const zhCN = {
   "keys.note1": "Key 只在创建时完整显示一次，之后只能看到前后几位。{plan}可用 {count} 个 Key。",
   "keys.note1.one": "Key 只在创建时完整显示一次，之后只能看到前后几位。{plan}可用 {count} 个 Key。",
   "keys.note1.other": "Key 只在创建时完整显示一次，之后只能看到前后几位。{plan}可用 {count} 个 Key。",
-  "keys.note2.prefix": "CLI 发布后，在终端运行",
+  "keys.note2.prefix": "在终端运行",
   "keys.note2.suffix": "即可复用这一份额度。",
 
   "tasks.aria": "最近任务",

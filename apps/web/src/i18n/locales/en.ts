@@ -328,7 +328,7 @@ export const en: Messages = {
   "keys.col.lastUsed": "Last used",
   "keys.col.actions": "Actions",
   "keys.loading": "Loading…",
-  "keys.empty": "No keys yet. Create one to use the same quota through the API; once the CLI ships it shares the same pool too.",
+  "keys.empty": "No keys yet. Create one to use the same quota through the API; the CLI shares the same pool too.",
   "keys.never": "Never",
   "keys.revoke": "Revoke",
   "keys.revoking": "Revoking…",
