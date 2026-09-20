@@ -106,7 +106,7 @@ fn test_config() -> AppConfig {
     config.auth.secure_cookies = false;
     config.auth.cookie_secret = "test-secret".to_string();
     config.server.max_concurrent_tasks = 2;
-    config.database.max_connections = 3;
+    config.database.max_connections = 1;
     config
 }
 
@@ -1694,19 +1694,14 @@ fn funnel_signups_only_count_device_attributed_accounts() {
         .await
         .unwrap();
 
-        let funnel: i64 = sqlx::query_scalar(
+        let (funnel, attributable): (i64, i64) = sqlx::query_as(
             "SELECT COALESCE((
                  SELECT signups FROM analytics.daily_funnel
                  WHERE day = date(now() AT TIME ZONE 'Asia/Shanghai')
-             ), 0)",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        let attributable: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM accounts
-             WHERE signup_device_id IS NOT NULL
-               AND date(created_at AT TIME ZONE 'Asia/Shanghai') = date(now() AT TIME ZONE 'Asia/Shanghai')",
+             ), 0),
+             (SELECT count(*) FROM accounts
+              WHERE signup_device_id IS NOT NULL
+                AND date(created_at AT TIME ZONE 'Asia/Shanghai') = date(now() AT TIME ZONE 'Asia/Shanghai'))",
         )
         .fetch_one(&pool)
         .await
