@@ -1,6 +1,6 @@
 use crate::i18n::{compression, CompressionDetail, Lang, Msg};
 use axum::{
-    http::StatusCode,
+    http::{header, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -40,6 +40,20 @@ pub enum AppError {
     },
     Unavailable {
         message: Msg,
+        lang: Lang,
+    },
+    Upscale {
+        detail: String,
+        lang: Lang,
+    },
+    UpscaleQueueFull {
+        depth: i64,
+        retry_after_secs: i64,
+        lang: Lang,
+    },
+    UpscaleOutputTooLarge {
+        size: u64,
+        max_size: u64,
         lang: Lang,
     },
     Internal(String),
@@ -87,6 +101,26 @@ impl AppError {
         Self::Unavailable { message, lang }
     }
 
+    pub fn upscale(detail: String, lang: Lang) -> Self {
+        Self::Upscale { detail, lang }
+    }
+
+    pub fn upscale_queue_full(depth: i64, retry_after_secs: i64, lang: Lang) -> Self {
+        Self::UpscaleQueueFull {
+            depth,
+            retry_after_secs,
+            lang,
+        }
+    }
+
+    pub fn upscale_output_too_large(size: u64, max_size: u64, lang: Lang) -> Self {
+        Self::UpscaleOutputTooLarge {
+            size,
+            max_size,
+            lang,
+        }
+    }
+
     pub fn internal(msg: impl Into<String>) -> Self {
         Self::Internal(msg.into())
     }
@@ -114,6 +148,23 @@ impl AppError {
             }
             AppError::RateLimited { message, .. } => AppError::RateLimited { message, lang },
             AppError::Unavailable { message, .. } => AppError::Unavailable { message, lang },
+            AppError::Upscale { detail, .. } => AppError::Upscale { detail, lang },
+            AppError::UpscaleQueueFull {
+                depth,
+                retry_after_secs,
+                ..
+            } => AppError::UpscaleQueueFull {
+                depth,
+                retry_after_secs,
+                lang,
+            },
+            AppError::UpscaleOutputTooLarge { size, max_size, .. } => {
+                AppError::UpscaleOutputTooLarge {
+                    size,
+                    max_size,
+                    lang,
+                }
+            }
             AppError::Compression { detail, .. } => AppError::Compression { detail, lang },
             other => other,
         }
@@ -130,6 +181,9 @@ impl AppError {
                 StatusCode::TOO_MANY_REQUESTS
             }
             AppError::Unavailable { .. } => StatusCode::SERVICE_UNAVAILABLE,
+            AppError::Upscale { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::UpscaleQueueFull { .. } => StatusCode::TOO_MANY_REQUESTS,
+            AppError::UpscaleOutputTooLarge { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::Internal(_) | AppError::Compression { .. } | AppError::Config(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
@@ -146,6 +200,9 @@ impl AppError {
             AppError::Forbidden { .. } => codes::FORBIDDEN,
             AppError::QuotaExceeded { .. } | AppError::RateLimited { .. } => codes::QUOTA_EXCEEDED,
             AppError::Unavailable { .. } => codes::SERVICE_UNAVAILABLE,
+            AppError::Upscale { .. } => codes::THIRD_PARTY_ERROR,
+            AppError::UpscaleQueueFull { .. } => codes::UPSCALE_QUEUE_FULL,
+            AppError::UpscaleOutputTooLarge { .. } => codes::UPSCALE_OUTPUT_TOO_LARGE,
             AppError::Internal(_) => codes::SERVER_ERROR,
             AppError::Compression { .. } => codes::THIRD_PARTY_ERROR,
             AppError::Config(_) => codes::SERVER_ERROR,
@@ -181,6 +238,28 @@ impl AppError {
             .render(*lang),
             AppError::RateLimited { message, lang } => message.render(*lang),
             AppError::Unavailable { message, lang } => message.render(*lang),
+            AppError::Upscale { detail, lang } => Msg::UpscaleFailed {
+                detail: detail.clone(),
+            }
+            .render(*lang),
+            AppError::UpscaleQueueFull {
+                depth,
+                retry_after_secs,
+                lang,
+            } => Msg::UpscaleQueueFull {
+                depth: *depth,
+                retry_after_secs: *retry_after_secs,
+            }
+            .render(*lang),
+            AppError::UpscaleOutputTooLarge {
+                size,
+                max_size,
+                lang,
+            } => Msg::UpscaleOutputTooLarge {
+                size_mb: *size as f64 / (1024.0 * 1024.0),
+                max_size_mb: *max_size as f64 / (1024.0 * 1024.0),
+            }
+            .render(*lang),
             AppError::Internal(msg) => format!("内部错误: {}", msg),
             AppError::Compression { detail, lang } => Msg::CompressionFailed {
                 detail: detail.render(*lang),
@@ -196,6 +275,14 @@ impl AppError {
                 "resets_at": resets_at.to_rfc3339(),
                 "remaining": 0,
             })),
+            AppError::UpscaleQueueFull {
+                depth,
+                retry_after_secs,
+                ..
+            } => Some(serde_json::json!({
+                "queue_depth": depth,
+                "retry_after": retry_after_secs,
+            })),
             _ => None,
         }
     }
@@ -207,6 +294,12 @@ impl IntoResponse for AppError {
         if matches!(self, AppError::Internal(_) | AppError::Config(_)) {
             tracing::error!(error = %self.message(), "request failed");
         }
+        let retry_after = match self {
+            AppError::UpscaleQueueFull {
+                retry_after_secs, ..
+            } => Some(retry_after_secs),
+            _ => None,
+        };
         let error_response = match self.data() {
             Some(data) => crate::response::ApiResponseError::with_data(
                 self.error_code(),
@@ -215,7 +308,13 @@ impl IntoResponse for AppError {
             ),
             None => crate::response::ApiResponseError::error(self.error_code(), self.message()),
         };
-        (status, Json(error_response)).into_response()
+        let mut response = (status, Json(error_response)).into_response();
+        if let Some(secs) = retry_after {
+            if let Ok(value) = HeaderValue::from_str(&secs.to_string()) {
+                response.headers_mut().insert(header::RETRY_AFTER, value);
+            }
+        }
+        response
     }
 }
 

@@ -79,14 +79,22 @@ fn full_frame(
     transparent: Option<u8>,
     dispose: ::gif::DisposalMethod,
 ) -> ::gif::Frame<'static> {
-    let mut frame =
-        ::gif::Frame::from_indexed_pixels(width as u16, height as u16, indices.to_vec(), transparent);
+    let mut frame = ::gif::Frame::from_indexed_pixels(
+        width as u16,
+        height as u16,
+        indices.to_vec(),
+        transparent,
+    );
     frame.delay = delay;
     frame.dispose = dispose;
     frame
 }
 
-fn changed_bounds(previous: &[u8], current: &[u8], width: usize) -> Option<(usize, usize, usize, usize)> {
+fn changed_bounds(
+    previous: &[u8],
+    current: &[u8],
+    width: usize,
+) -> Option<(usize, usize, usize, usize)> {
     let mut bounds: Option<(usize, usize, usize, usize)> = None;
     for (position, (before, after)) in previous.iter().zip(current).enumerate() {
         if before == after {
@@ -113,7 +121,14 @@ fn diff_frames(
     for (index, indices) in frames.iter().enumerate() {
         let delay = delays[index];
         if index == 0 {
-            out.push(full_frame(indices, width, height, delay, None, ::gif::DisposalMethod::Keep));
+            out.push(full_frame(
+                indices,
+                width,
+                height,
+                delay,
+                None,
+                ::gif::DisposalMethod::Keep,
+            ));
             continue;
         }
         let previous = &frames[index - 1];
@@ -163,8 +178,9 @@ fn encode_gif(
         .collect();
     let mut out = Vec::new();
     {
-        let mut encoder = ::gif::Encoder::new(&mut out, width as u16, height as u16, &palette_bytes)
-            .map_err(gif_error)?;
+        let mut encoder =
+            ::gif::Encoder::new(&mut out, width as u16, height as u16, &palette_bytes)
+                .map_err(gif_error)?;
         if let Some(count) = loop_count {
             let repeat = if count == 0 {
                 ::gif::Repeat::Infinite
@@ -349,7 +365,12 @@ pub mod tests {
             assert_eq!(mismatched, 0, "frame pixels should survive the round trip");
         }
         assert_eq!(probe::gif_loop_count(&compressed), Some(0));
-        assert!(compressed.len() < original.len(), "{} < {}", compressed.len(), original.len());
+        assert!(
+            compressed.len() < original.len(),
+            "{} < {}",
+            compressed.len(),
+            original.len()
+        );
     }
 
     #[tokio::test]
@@ -387,7 +408,12 @@ pub mod tests {
                     }
                 }
                 encoder
-                    .encode_frame(Frame::from_parts(image, 0, 0, Delay::from_numer_denom_ms(50, 1)))
+                    .encode_frame(Frame::from_parts(
+                        image,
+                        0,
+                        0,
+                        Delay::from_numer_denom_ms(50, 1),
+                    ))
                     .unwrap();
             }
         }

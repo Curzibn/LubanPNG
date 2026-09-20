@@ -1,5 +1,5 @@
-use crate::domain::subject::Plan;
-use crate::error::AppResult;
+use crate::domain::subject::{Plan, SubjectKind};
+use crate::error::{AppError, AppResult};
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -52,6 +52,20 @@ impl IdentityRepository {
             .fetch_optional(&self.pool)
             .await?;
         Ok(plan)
+    }
+
+    pub async fn plan_for_task(&self, subject_type: &str, subject_id: Uuid) -> AppResult<Plan> {
+        let plan_id = if subject_type == SubjectKind::Account.as_str() {
+            self.account(subject_id)
+                .await?
+                .map(|account| account.plan_id)
+                .unwrap_or_else(|| "free".to_string())
+        } else {
+            "anonymous".to_string()
+        };
+        self.plan(&plan_id)
+            .await?
+            .ok_or_else(|| AppError::internal(format!("套餐不存在: {}", plan_id)))
     }
 
     pub async fn touch_device(&self, id: Uuid) -> AppResult<()> {

@@ -195,5 +195,4 @@ mod tests {
         assert!(decision.should_compress);
         assert_eq!(decision.target_quality, 85);
     }
-
 }

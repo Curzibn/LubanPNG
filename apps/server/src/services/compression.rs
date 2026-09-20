@@ -1,7 +1,7 @@
 use crate::config::AppConfig;
 use crate::domain::compression::ConversionRequest;
-use crate::domain::subject::{Plan, Subject, SubjectKind};
-use crate::domain::task::{TaskRecord, TaskStatus};
+use crate::domain::subject::Subject;
+use crate::domain::task::{TaskKind, TaskRecord, TaskStatus};
 use crate::error::{AppError, AppResult};
 use crate::i18n::{compression, Lang, Msg};
 use crate::infrastructure::compression::convert::convert_image;
@@ -31,6 +31,10 @@ pub struct TaskStatusView {
     pub progress: u8,
     #[schema(example = "web")]
     pub source: String,
+    #[schema(example = "compress")]
+    pub kind: String,
+    #[schema(example = "x4")]
+    pub scale: Option<String>,
     #[schema(example = "photo.png")]
     pub original_name: String,
     #[schema(example = 1024000)]
@@ -88,7 +92,7 @@ fn effective_conversion(
     conversion.filter(|request| request.target.image_format() != source)
 }
 
-fn sanitize_name(name: &str) -> String {
+pub(crate) fn sanitize_name(name: &str) -> String {
     let trimmed = name.trim().rsplit(['/', '\\']).next().unwrap_or("").trim();
     let cleaned: String = trimmed
         .chars()
@@ -187,6 +191,8 @@ impl CompressionService {
                 input_key: input_key.clone(),
                 quota_period: snapshot.period_key.clone(),
                 quota_units: units as i16,
+                kind: TaskKind::Compress,
+                upscale_scale: None,
                 target_format: conversion.map(|request| request.target.as_str().to_string()),
                 background: conversion
                     .and_then(|request| request.background)
@@ -225,6 +231,8 @@ impl CompressionService {
             status: task.status.clone(),
             progress: task.progress.max(0) as u8,
             source: task.source.clone(),
+            kind: task.kind().as_str().to_string(),
+            scale: task.scale().map(|scale| scale.as_str().to_string()),
             original_name: task.original_name.clone(),
             original_size: task.original_size.max(0) as u64,
             compressed_size: task.compressed_size.map(|s| s.max(0) as u64),
@@ -236,7 +244,7 @@ impl CompressionService {
             target_format: task.target_format.clone(),
             output_format: task.output_format().map(str::to_string),
             quota_units: task.billed_units(),
-            no_gain: task.no_gain(),
+            no_gain: task.kind() == TaskKind::Compress && task.no_gain(),
             error_msg: task.error_msg.clone(),
             created_at: task.created_at.timestamp(),
             completed_at: task.completed_at.map(|t| t.timestamp()),
@@ -307,22 +315,6 @@ impl CompressionService {
             .await
     }
 
-    async fn plan_for_task(&self, task: &TaskRecord) -> AppResult<Plan> {
-        let plan_id = if task.subject_type == SubjectKind::Account.as_str() {
-            self.identity
-                .account(task.subject_id)
-                .await?
-                .map(|account| account.plan_id)
-                .unwrap_or_else(|| "free".to_string())
-        } else {
-            "anonymous".to_string()
-        };
-        self.identity
-            .plan(&plan_id)
-            .await?
-            .ok_or_else(|| AppError::internal(format!("套餐不存在: {}", plan_id)))
-    }
-
     async fn run(&self, task: &TaskRecord) -> AppResult<()> {
         let lang = Lang::from_stored(&task.lang);
         let input = self.storage.get(&task.input_key).await?;
@@ -343,7 +335,10 @@ impl CompressionService {
         .map_err(|e| AppError::compression(compression::task_execution(e)))??;
 
         self.tasks.set_progress(task.id, 70).await?;
-        let plan = self.plan_for_task(task).await?;
+        let plan = self
+            .identity
+            .plan_for_task(&task.subject_type, task.subject_id)
+            .await?;
         let original_size = task.original_size.max(0);
         let compressed_size = result.data.len() as i64;
         let keep_original = conversion.is_none() && compressed_size >= original_size;

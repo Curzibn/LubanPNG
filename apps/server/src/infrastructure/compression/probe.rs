@@ -150,8 +150,14 @@ mod tests {
 
     #[test]
     fn sniffs_avif_by_major_or_compatible_brand() {
-        assert_eq!(sniff_format(&ftyp(b"avif", &[b"mif1"])), Some(ImageFormat::Avif));
-        assert_eq!(sniff_format(&ftyp(b"mif1", &[b"avif"])), Some(ImageFormat::Avif));
+        assert_eq!(
+            sniff_format(&ftyp(b"avif", &[b"mif1"])),
+            Some(ImageFormat::Avif)
+        );
+        assert_eq!(
+            sniff_format(&ftyp(b"mif1", &[b"avif"])),
+            Some(ImageFormat::Avif)
+        );
         assert_eq!(sniff_format(&ftyp(b"avis", &[])), Some(ImageFormat::Avif));
     }
 

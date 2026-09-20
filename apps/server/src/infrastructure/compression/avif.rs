@@ -86,7 +86,15 @@ pub mod tests {
             .await
             .unwrap();
         assert_eq!(result.format, ImageFormat::Avif);
-        assert_eq!(image::load_from_memory(&result.data).unwrap().dimensions(), (128, 128));
-        assert!(result.data.len() < original.len(), "{} < {}", result.data.len(), original.len());
+        assert_eq!(
+            image::load_from_memory(&result.data).unwrap().dimensions(),
+            (128, 128)
+        );
+        assert!(
+            result.data.len() < original.len(),
+            "{} < {}",
+            result.data.len(),
+            original.len()
+        );
     }
 }

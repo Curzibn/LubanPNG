@@ -11,6 +11,7 @@ pub struct AppConfig {
     pub avif_smart: AvifSmartConfig,
     pub database: DatabaseConfig,
     pub storage: StorageConfig,
+    pub upscaler: UpscalerConfig,
     pub auth: AuthConfig,
     pub mail: MailConfig,
     pub web: WebConfig,
@@ -185,6 +186,38 @@ impl StorageConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+pub struct UpscalerConfig {
+    pub enabled: bool,
+    pub endpoint: String,
+    pub token: String,
+    pub task_timeout_secs: u64,
+    pub health_timeout_secs: u64,
+    pub queue_depth_limit: i32,
+    pub max_input_bytes: i64,
+    pub max_input_pixels: i64,
+    pub max_input_side: u32,
+    pub max_output_bytes: usize,
+}
+
+impl Default for UpscalerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            endpoint: String::new(),
+            token: String::new(),
+            task_timeout_secs: 180,
+            health_timeout_secs: 5,
+            queue_depth_limit: 10,
+            max_input_bytes: 20 * 1024 * 1024,
+            max_input_pixels: 2_250_000,
+            max_input_side: 2048,
+            max_output_bytes: 64 * 1024 * 1024,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AuthConfig {
     pub cookie_secret: String,
     pub secure_cookies: bool,
@@ -253,6 +286,7 @@ impl Default for WebConfig {
 #[serde(default)]
 pub struct LimitsConfig {
     pub anonymous_uploads_per_ip_per_day: u32,
+    pub upscale_anonymous_per_ip_per_day: u32,
     pub otp_per_email_per_10min: u32,
     pub otp_per_ip_per_hour: u32,
     pub visit_per_device_per_minute: u32,
@@ -265,6 +299,7 @@ impl Default for LimitsConfig {
     fn default() -> Self {
         Self {
             anonymous_uploads_per_ip_per_day: 30,
+            upscale_anonymous_per_ip_per_day: 30,
             otp_per_email_per_10min: 3,
             otp_per_ip_per_hour: 20,
             visit_per_device_per_minute: 30,

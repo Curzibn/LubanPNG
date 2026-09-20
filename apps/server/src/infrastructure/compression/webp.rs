@@ -151,10 +151,17 @@ pub mod tests {
 
     pub fn sample_animated_webp(frames: usize) -> Vec<u8> {
         let config = lossy_config(90, 4).unwrap();
-        let buffers: Vec<RgbaImage> = (0..frames).map(|i| photo_like(64, 64, i as u32 * 9)).collect();
+        let buffers: Vec<RgbaImage> = (0..frames)
+            .map(|i| photo_like(64, 64, i as u32 * 9))
+            .collect();
         let mut encoder = ::webp::AnimEncoder::new(64, 64, &config);
         for (index, buffer) in buffers.iter().enumerate() {
-            encoder.add_frame(::webp::AnimFrame::from_rgba(buffer.as_raw(), 64, 64, index as i32 * 100));
+            encoder.add_frame(::webp::AnimFrame::from_rgba(
+                buffer.as_raw(),
+                64,
+                64,
+                index as i32 * 100,
+            ));
         }
         encoder.set_loop_count(0);
         encoder.try_encode().unwrap().to_vec()
@@ -167,7 +174,12 @@ pub mod tests {
         assert_eq!(&compressed[8..12], b"WEBP");
         let decoded = image::load_from_memory(&compressed).unwrap();
         assert_eq!(decoded.dimensions(), (128, 128));
-        assert!(compressed.len() < original.len(), "{} < {}", compressed.len(), original.len());
+        assert!(
+            compressed.len() < original.len(),
+            "{} < {}",
+            compressed.len(),
+            original.len()
+        );
     }
 
     #[test]
@@ -181,7 +193,11 @@ pub mod tests {
         let first = decoded.get_frame(0).unwrap();
         assert_eq!((first.width(), first.height()), (64, 64));
         let last = decoded.get_frame(2).unwrap();
-        assert!(last.get_time_ms() >= 200, "last frame ends at {}ms", last.get_time_ms());
+        assert!(
+            last.get_time_ms() >= 200,
+            "last frame ends at {}ms",
+            last.get_time_ms()
+        );
     }
 
     #[test]

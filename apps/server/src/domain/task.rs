@@ -35,6 +35,74 @@ impl TaskStatus {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskKind {
+    Compress,
+    Upscale,
+}
+
+impl TaskKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TaskKind::Compress => "compress",
+            TaskKind::Upscale => "upscale",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "compress" => Some(TaskKind::Compress),
+            "upscale" => Some(TaskKind::Upscale),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpscaleScale {
+    X2,
+    X4,
+}
+
+impl UpscaleScale {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "x2" => Some(UpscaleScale::X2),
+            "x4" => Some(UpscaleScale::X4),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            UpscaleScale::X2 => "x2",
+            UpscaleScale::X4 => "x4",
+        }
+    }
+
+    pub fn factor(&self) -> u32 {
+        match self {
+            UpscaleScale::X2 => 2,
+            UpscaleScale::X4 => 4,
+        }
+    }
+
+    pub fn from_stored(value: i16) -> Option<Self> {
+        match value {
+            2 => Some(UpscaleScale::X2),
+            4 => Some(UpscaleScale::X4),
+            _ => None,
+        }
+    }
+
+    pub fn stored(&self) -> i16 {
+        match self {
+            UpscaleScale::X2 => 2,
+            UpscaleScale::X4 => 4,
+        }
+    }
+}
+
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct TaskRecord {
     pub id: Uuid,
@@ -51,6 +119,8 @@ pub struct TaskRecord {
     pub error_msg: Option<String>,
     pub quota_period: String,
     pub quota_units: i16,
+    pub kind: String,
+    pub upscale_scale: Option<i16>,
     pub target_format: Option<String>,
     pub background: Option<String>,
     pub lang: String,
@@ -65,6 +135,14 @@ pub struct TaskRecord {
 impl TaskRecord {
     pub fn status(&self) -> TaskStatus {
         TaskStatus::parse(&self.status).unwrap_or(TaskStatus::Failed)
+    }
+
+    pub fn kind(&self) -> TaskKind {
+        TaskKind::parse(&self.kind).unwrap_or(TaskKind::Compress)
+    }
+
+    pub fn scale(&self) -> Option<UpscaleScale> {
+        self.upscale_scale.and_then(UpscaleScale::from_stored)
     }
 
     pub fn is_terminal(&self) -> bool {
@@ -98,10 +176,20 @@ impl TaskRecord {
     }
 
     pub fn billed_units(&self) -> i32 {
-        if self.no_gain() {
-            0
-        } else {
-            self.quota_units()
+        match self.kind() {
+            TaskKind::Upscale => match self.status() {
+                TaskStatus::Failed => 0,
+                TaskStatus::Completed | TaskStatus::Pending | TaskStatus::Processing => {
+                    self.quota_units()
+                }
+            },
+            TaskKind::Compress => {
+                if self.no_gain() {
+                    0
+                } else {
+                    self.quota_units()
+                }
+            }
         }
     }
 
@@ -154,6 +242,8 @@ mod tests {
             error_msg: None,
             quota_period: "2026-09-20".to_string(),
             quota_units: units,
+            kind: TaskKind::Compress.as_str().to_string(),
+            upscale_scale: None,
             target_format: None,
             background: None,
             lang: "zh".to_string(),
@@ -164,6 +254,18 @@ mod tests {
             completed_at: None,
             expires_at: None,
         }
+    }
+
+    fn upscale_task(
+        status: &str,
+        original_size: i64,
+        compressed_size: Option<i64>,
+        units: i16,
+    ) -> TaskRecord {
+        let mut record = task(status, original_size, compressed_size, units);
+        record.kind = TaskKind::Upscale.as_str().to_string();
+        record.upscale_scale = Some(UpscaleScale::X4.stored());
+        record
     }
 
     #[test]
@@ -193,5 +295,38 @@ mod tests {
         let failed = task("failed", 1024, None, 2);
         assert!(failed.no_gain());
         assert_eq!(failed.billed_units(), 0);
+    }
+
+    #[test]
+    fn upscale_billing_ignores_size_comparison() {
+        let grown = upscale_task("completed", 1024, Some(4096), 1);
+        assert!(grown.no_gain());
+        assert_eq!(grown.billed_units(), 1);
+
+        let failed = upscale_task("failed", 1024, None, 1);
+        assert_eq!(failed.billed_units(), 0);
+
+        for status in ["pending", "processing"] {
+            let running = upscale_task(status, 1024, None, 1);
+            assert_eq!(running.billed_units(), 1, "{status} keeps the reservation");
+        }
+
+        let without_output = upscale_task("completed", 1024, None, 1);
+        assert_eq!(without_output.billed_units(), 1);
+    }
+
+    #[test]
+    fn scale_parses_external_and_stored_forms() {
+        assert_eq!(UpscaleScale::parse("x2"), Some(UpscaleScale::X2));
+        assert_eq!(UpscaleScale::parse(" X4 "), Some(UpscaleScale::X4));
+        assert_eq!(UpscaleScale::parse("2"), None);
+        assert_eq!(UpscaleScale::parse("x8"), None);
+        assert_eq!(UpscaleScale::X4.factor(), 4);
+        assert_eq!(UpscaleScale::X2.as_str(), "x2");
+        assert_eq!(
+            UpscaleScale::from_stored(UpscaleScale::X4.stored()),
+            Some(UpscaleScale::X4)
+        );
+        assert_eq!(UpscaleScale::from_stored(3), None);
     }
 }

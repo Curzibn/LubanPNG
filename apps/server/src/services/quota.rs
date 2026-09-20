@@ -83,7 +83,13 @@ impl QuotaService {
             .await?;
         match self
             .repo
-            .reserve(subject.kind.as_str(), subject.id, &period_key, task_id, units)
+            .reserve(
+                subject.kind.as_str(),
+                subject.id,
+                &period_key,
+                task_id,
+                units,
+            )
             .await?
         {
             Some(row) => Ok(self.snapshot_from(period_key, resets_at, row)),

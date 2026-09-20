@@ -41,6 +41,9 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 bytes = "1.12.1"
 percent-encoding = "2"
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["client", "client-legacy", "http1", "tokio"] }
+http-body-util = "0.1"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

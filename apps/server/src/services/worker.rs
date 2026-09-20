@@ -2,6 +2,7 @@ use crate::repositories::rate_limit_repository::RateLimitRepository;
 use crate::repositories::task_repository::TaskRepository;
 use crate::repositories::visit_repository::VisitRepository;
 use crate::services::compression::CompressionService;
+use crate::services::upscale::UpscaleService;
 use chrono::{Duration, Utc};
 use std::sync::Arc;
 use tokio::task::JoinHandle;
@@ -9,6 +10,7 @@ use tokio::time::{sleep, Duration as StdDuration};
 
 pub fn spawn_workers(
     service: Arc<CompressionService>,
+    upscale: Arc<UpscaleService>,
     tasks: Arc<TaskRepository>,
     rate_limits: Arc<RateLimitRepository>,
     visits: Arc<VisitRepository>,
@@ -16,13 +18,29 @@ pub fn spawn_workers(
     stale_secs: i64,
 ) -> Vec<JoinHandle<()>> {
     let instance = uuid::Uuid::new_v4().to_string();
+    let upscale_enabled = upscale.is_enabled();
     let mut handles = Vec::with_capacity(worker_count + 1);
     for index in 0..worker_count.max(1) {
         let worker_id = format!("{}-{}", instance, index);
         let service = service.clone();
+        let upscale = upscale.clone();
         let tasks = tasks.clone();
         handles.push(tokio::spawn(async move {
             loop {
+                if upscale_enabled {
+                    match tasks.claim_next_upscale(&worker_id).await {
+                        Ok(Some(task)) => {
+                            upscale.process(task).await;
+                            continue;
+                        }
+                        Ok(None) => {}
+                        Err(err) => {
+                            tracing::warn!(worker = %worker_id, error = %err, "claiming upscale task failed");
+                            sleep(StdDuration::from_secs(2)).await;
+                            continue;
+                        }
+                    }
+                }
                 match tasks.claim_next(&worker_id).await {
                     Ok(Some(task)) => service.process(task).await,
                     Ok(None) => sleep(StdDuration::from_millis(400)).await,

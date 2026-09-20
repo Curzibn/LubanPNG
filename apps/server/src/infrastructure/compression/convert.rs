@@ -19,7 +19,9 @@ fn flatten(image: &mut RgbaImage, background: Background) {
     for pixel in image.pixels_mut() {
         let alpha = u32::from(pixel[3]);
         for channel in 0..3 {
-            let blended = (u32::from(pixel[channel]) * alpha + u32::from(base[channel]) * (255 - alpha)) / 255;
+            let blended = (u32::from(pixel[channel]) * alpha
+                + u32::from(base[channel]) * (255 - alpha))
+                / 255;
             pixel[channel] = blended as u8;
         }
         pixel[3] = 255;
@@ -84,7 +86,12 @@ mod tests {
     fn transparent_png() -> Vec<u8> {
         let mut image = RgbaImage::new(40, 40);
         for (x, y, pixel) in image.enumerate_pixels_mut() {
-            *pixel = image::Rgba([(x * 6) as u8, (y * 6) as u8, 120, if x < 20 { 0 } else { 255 }]);
+            *pixel = image::Rgba([
+                (x * 6) as u8,
+                (y * 6) as u8,
+                120,
+                if x < 20 { 0 } else { 255 },
+            ]);
         }
         let mut out = Vec::new();
         DynamicImage::ImageRgba8(image)
@@ -111,7 +118,12 @@ mod tests {
             assert_eq!(result.format, target.image_format());
             let decoded = image::load_from_memory(&result.data).unwrap();
             assert_eq!(decoded.dimensions(), (40, 40));
-            assert_eq!(decoded.to_rgba8().get_pixel(0, 0)[3], 0, "{:?} keeps alpha", target);
+            assert_eq!(
+                decoded.to_rgba8().get_pixel(0, 0)[3],
+                0,
+                "{:?} keeps alpha",
+                target
+            );
         }
     }
 
@@ -151,7 +163,11 @@ mod tests {
         assert_eq!(flattened.format, ImageFormat::Jpeg);
         let decoded = image::load_from_memory(&flattened.data).unwrap().to_rgb8();
         let corner = decoded.get_pixel(0, 0);
-        assert!(corner[0] > 230 && corner[1] > 230 && corner[2] > 230, "{:?}", corner);
+        assert!(
+            corner[0] > 230 && corner[1] > 230 && corner[2] > 230,
+            "{:?}",
+            corner
+        );
     }
 
     #[test]

@@ -113,7 +113,12 @@ pub fn quantize_image(
     Ok((quantized.palette, indices))
 }
 
-pub fn expand_to_rgba(palette: &[RGBA], indices: &[u8], width: u32, height: u32) -> Option<RgbaImage> {
+pub fn expand_to_rgba(
+    palette: &[RGBA],
+    indices: &[u8],
+    width: u32,
+    height: u32,
+) -> Option<RgbaImage> {
     let mut data = Vec::with_capacity(indices.len() * 4);
     for &index in indices {
         let color = palette.get(index as usize)?;
@@ -147,7 +152,9 @@ mod tests {
         assert!(quantized.palette.len() <= 256);
         for indices in &quantized.frames {
             assert_eq!(indices.len(), 32 * 32);
-            assert!(indices.iter().all(|&i| (i as usize) < quantized.palette.len()));
+            assert!(indices
+                .iter()
+                .all(|&i| (i as usize) < quantized.palette.len()));
         }
     }
 

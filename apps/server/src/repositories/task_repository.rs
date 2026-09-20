@@ -1,4 +1,4 @@
-use crate::domain::task::TaskRecord;
+use crate::domain::task::{TaskKind, TaskRecord};
 use crate::error::AppResult;
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
@@ -14,10 +14,14 @@ pub struct NewTask {
     pub input_key: String,
     pub quota_period: String,
     pub quota_units: i16,
+    pub kind: TaskKind,
+    pub upscale_scale: Option<i16>,
     pub target_format: Option<String>,
     pub background: Option<String>,
     pub lang: String,
 }
+
+const UPSCALE_CLAIM_ADVISORY_KEY: i64 = 8431;
 
 pub struct TaskRepository {
     pool: PgPool,
@@ -30,8 +34,8 @@ impl TaskRepository {
 
     pub async fn create(&self, task: NewTask) -> AppResult<TaskRecord> {
         let record = sqlx::query_as::<_, TaskRecord>(
-            "INSERT INTO tasks (id, subject_type, subject_id, source, status, original_name, original_size, input_key, quota_period, quota_units, target_format, background, lang)
-             VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7, $8, $9, $10, $11, $12)
+            "INSERT INTO tasks (id, subject_type, subject_id, source, status, original_name, original_size, input_key, quota_period, quota_units, kind, upscale_scale, target_format, background, lang)
+             VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
              RETURNING *",
         )
         .bind(task.id)
@@ -43,6 +47,8 @@ impl TaskRepository {
         .bind(&task.input_key)
         .bind(&task.quota_period)
         .bind(task.quota_units)
+        .bind(task.kind.as_str())
+        .bind(task.upscale_scale)
         .bind(&task.target_format)
         .bind(&task.background)
         .bind(&task.lang)
@@ -64,7 +70,7 @@ impl TaskRepository {
             "UPDATE tasks
              SET status = 'processing', locked_by = $1, locked_at = now(), started_at = now(), progress = 10
              WHERE id = (
-                 SELECT id FROM tasks WHERE status = 'pending'
+                 SELECT id FROM tasks WHERE status = 'pending' AND kind = 'compress'
                  ORDER BY created_at
                  LIMIT 1
                  FOR UPDATE SKIP LOCKED
@@ -75,6 +81,41 @@ impl TaskRepository {
         .fetch_optional(&self.pool)
         .await?;
         Ok(record)
+    }
+
+    pub async fn claim_next_upscale(&self, worker_id: &str) -> AppResult<Option<TaskRecord>> {
+        let record = sqlx::query_as::<_, TaskRecord>(
+            "UPDATE tasks
+             SET status = 'processing', locked_by = $1, locked_at = now(), started_at = now(), progress = 30
+             WHERE id = (
+                 SELECT id FROM tasks
+                 WHERE status = 'pending' AND kind = 'upscale'
+                   AND NOT EXISTS (
+                       SELECT 1 FROM tasks busy
+                       WHERE busy.kind = 'upscale' AND busy.status = 'processing'
+                   )
+                   AND pg_try_advisory_xact_lock($2)
+                 ORDER BY created_at
+                 LIMIT 1
+                 FOR UPDATE SKIP LOCKED
+             )
+             RETURNING *",
+        )
+        .bind(worker_id)
+        .bind(UPSCALE_CLAIM_ADVISORY_KEY)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(record)
+    }
+
+    pub async fn upscale_queue_depth(&self) -> AppResult<i64> {
+        let depth: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM tasks
+             WHERE kind = 'upscale' AND status IN ('pending', 'processing')",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(depth)
     }
 
     pub async fn set_progress(&self, id: Uuid, progress: i16) -> AppResult<()> {
@@ -153,9 +194,11 @@ impl TaskRepository {
 
     pub async fn queue_position(&self, task: &TaskRecord) -> AppResult<i64> {
         let ahead: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM tasks WHERE status = 'pending' AND created_at < $1",
+            "SELECT count(*) FROM tasks
+             WHERE status = 'pending' AND kind = $2 AND created_at < $1",
         )
         .bind(task.created_at)
+        .bind(&task.kind)
         .fetch_one(&self.pool)
         .await?;
         Ok(ahead + 1)

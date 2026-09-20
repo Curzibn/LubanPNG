@@ -10,7 +10,8 @@ use lubanpng::i18n::{login_code_email, Lang};
 use lubanpng::infrastructure::db;
 use lubanpng::infrastructure::mail::{DisabledMailer, Mailer};
 use lubanpng::infrastructure::storage::{ObjectStorage, S3Storage};
-use std::collections::HashMap;
+use lubanpng::infrastructure::upscale::{UpscaleFailure, UpscaleOutput, Upscaler};
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::runtime::Runtime;
@@ -107,7 +108,107 @@ fn test_config() -> AppConfig {
     config.auth.cookie_secret = "test-secret".to_string();
     config.server.max_concurrent_tasks = 2;
     config.database.max_connections = 1;
+    config.upscaler.endpoint = "http://127.0.0.1:18431".to_string();
+    config.upscaler.token = "test-token".to_string();
     config
+}
+
+fn upscale_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    static GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    GUARD
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+async fn drain_upscale_tasks(pool: &sqlx::PgPool) {
+    sqlx::query("DELETE FROM tasks WHERE kind = 'upscale' AND status IN ('pending', 'processing')")
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+enum MockStep {
+    Busy,
+    Fail(UpscaleFailure),
+    Hold(Duration),
+}
+
+struct ScriptedUpscaler {
+    steps: Mutex<VecDeque<MockStep>>,
+    healthy: Mutex<bool>,
+}
+
+impl ScriptedUpscaler {
+    fn shared() -> &'static Arc<Self> {
+        static SHARED: std::sync::OnceLock<Arc<ScriptedUpscaler>> = std::sync::OnceLock::new();
+        SHARED.get_or_init(|| {
+            Arc::new(Self {
+                steps: Mutex::new(VecDeque::new()),
+                healthy: Mutex::new(true),
+            })
+        })
+    }
+
+    fn reset(&self) {
+        self.steps.lock().unwrap().clear();
+        *self.healthy.lock().unwrap() = true;
+    }
+
+    fn set_steps(&self, steps: Vec<MockStep>) {
+        *self.steps.lock().unwrap() = steps.into();
+    }
+
+    fn set_healthy(&self, healthy: bool) {
+        *self.healthy.lock().unwrap() = healthy;
+    }
+}
+
+fn nearest_upscale_png(data: &[u8], factor: u32) -> Vec<u8> {
+    let img = image::load_from_memory(data).unwrap();
+    let (width, height) = (img.width() * factor, img.height() * factor);
+    let resized = img.resize_exact(width, height, image::imageops::FilterType::Nearest);
+    let mut buf = Vec::new();
+    resized
+        .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+        .unwrap();
+    buf
+}
+
+#[async_trait]
+impl Upscaler for ScriptedUpscaler {
+    async fn health(&self) -> Result<(), UpscaleFailure> {
+        if *self.healthy.lock().unwrap() {
+            Ok(())
+        } else {
+            Err(UpscaleFailure::PlatformUnavailable("unhealthy".to_string()))
+        }
+    }
+
+    async fn upscale(
+        &self,
+        data: bytes::Bytes,
+        factor: u32,
+        _timeout: Duration,
+    ) -> Result<UpscaleOutput, UpscaleFailure> {
+        let step = self.steps.lock().unwrap().pop_front();
+        match step {
+            Some(MockStep::Busy) => Err(UpscaleFailure::Busy),
+            Some(MockStep::Fail(failure)) => Err(failure),
+            Some(MockStep::Hold(delay)) => {
+                tokio::time::sleep(delay).await;
+                Ok(UpscaleOutput {
+                    data: nearest_upscale_png(&data, factor).into(),
+                    width: None,
+                    height: None,
+                })
+            }
+            None => Ok(UpscaleOutput {
+                data: nearest_upscale_png(&data, factor).into(),
+                width: None,
+                height: None,
+            }),
+        }
+    }
 }
 
 struct TestApp {
@@ -116,15 +217,33 @@ struct TestApp {
     mailer: Arc<CapturingMailer>,
     cookies: Mutex<HashMap<String, String>>,
     client_ip: String,
+    pool: sqlx::PgPool,
+    upscaler: Arc<ScriptedUpscaler>,
 }
 
 async fn test_app_with(mailer: Arc<dyn Mailer>, capturing: Arc<CapturingMailer>) -> TestApp {
-    let config = test_config();
+    test_app_with_upscaler(mailer, capturing, |_| {}).await
+}
+
+async fn test_app_with_upscaler(
+    mailer: Arc<dyn Mailer>,
+    capturing: Arc<CapturingMailer>,
+    tune: impl FnOnce(&mut AppConfig),
+) -> TestApp {
+    let mut config = test_config();
+    tune(&mut config);
     let pool = db::connect(&config.database)
         .await
         .expect("TEST_DATABASE_URL must point at a reachable PostgreSQL database");
     let storage = Arc::new(S3Storage::from_config(&config.storage).expect("storage config"));
-    let state = build_state(config, pool, storage.clone(), mailer);
+    let upscaler = ScriptedUpscaler::shared().clone();
+    let state = build_state(
+        config,
+        pool.clone(),
+        storage.clone(),
+        mailer,
+        upscaler.clone(),
+    );
     let _workers = start_workers(&state, 2);
     let octet = rand_octet();
     TestApp {
@@ -133,6 +252,8 @@ async fn test_app_with(mailer: Arc<dyn Mailer>, capturing: Arc<CapturingMailer>)
         mailer: capturing,
         cookies: Mutex::new(HashMap::new()),
         client_ip: format!("10.{}.{}.{}", octet, rand_octet(), rand_octet()),
+        pool,
+        upscaler,
     }
 }
 
@@ -480,6 +601,35 @@ impl TestApp {
             task_id
         );
     }
+
+    async fn upscale(&self, filename: &str, content: &[u8], scale: &str) -> Reply {
+        let (content_type, body) = multipart_with_fields(filename, content, &[("scale", scale)]);
+        self.send(
+            Method::POST,
+            "/v1/images/upscale",
+            Some(&content_type),
+            body,
+            None,
+        )
+        .await
+    }
+
+    async fn upscale_with_extra(
+        &self,
+        filename: &str,
+        content: &[u8],
+        fields: &[(&str, &str)],
+    ) -> Reply {
+        let (content_type, body) = multipart_with_fields(filename, content, fields);
+        self.send(
+            Method::POST,
+            "/v1/images/upscale",
+            Some(&content_type),
+            body,
+            None,
+        )
+        .await
+    }
 }
 
 fn gradient_png(w: u32, h: u32) -> Vec<u8> {
@@ -532,10 +682,7 @@ fn multipart_raw(field: &str, filename: &str, content: &[u8]) -> (String, Vec<u8
     let mut body = head.into_bytes();
     body.extend_from_slice(content);
     body.extend_from_slice(format!("\r\n--{}--\r\n", boundary).as_bytes());
-    (
-        format!("multipart/form-data; boundary={}", boundary),
-        body,
-    )
+    (format!("multipart/form-data; boundary={}", boundary), body)
 }
 
 fn multipart_body(field: &str, filename: &str, content: &[u8]) -> (String, Body) {
@@ -2956,5 +3103,420 @@ fn no_gain_task_refunds_quota_while_compressing_task_settles() {
         .await
         .unwrap();
         assert_eq!(high_ledger, (1, 0, 1));
+    });
+}
+
+#[test]
+fn upscale_task_completes_and_settles_one_unit_even_when_output_grows() {
+    run(async {
+        let _guard = upscale_test_guard();
+        let app = test_app_with_upscaler(
+            Arc::new(DisabledMailer),
+            Arc::new(CapturingMailer {
+                codes: Mutex::new(Vec::new()),
+            }),
+            |config| config.upscaler.enabled = true,
+        )
+        .await;
+        app.upscaler.reset();
+        drain_upscale_tasks(&app.pool).await;
+        let source = gradient_png(64, 64);
+        let reply = app.upscale("small.png", &source, "x4").await;
+        assert_eq!(
+            reply.status,
+            StatusCode::OK,
+            "upscale should queue: {}",
+            String::from_utf8_lossy(&reply.body)
+        );
+        assert_eq!(reply.headers["x-quota-remaining"], "4");
+        let task_id = reply.json()["data"]["task_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let task = app.wait_final(&task_id).await;
+        assert_eq!(task["status"], "completed", "{}", task);
+        assert_eq!(task["kind"], "upscale", "{}", task);
+        assert_eq!(task["scale"], "x4", "{}", task);
+        assert_eq!(task["quota_units"], 1, "{}", task);
+        assert_eq!(task["no_gain"], false, "{}", task);
+        assert_eq!(task["output_format"], "png", "{}", task);
+        assert!(
+            task["compressed_size"].as_u64().unwrap() > source.len() as u64,
+            "{}",
+            task
+        );
+        assert_eq!(task["downloadable"], true);
+
+        let download_path = task["compressed_url"].as_str().unwrap().to_string();
+        let download = app.get(&download_path).await;
+        assert_eq!(download.status, StatusCode::TEMPORARY_REDIRECT);
+        assert!(download.headers.contains_key(header::LOCATION));
+
+        let me = app.get("/v1/me").await.json()["data"].clone();
+        assert_eq!(me["quota"]["used"], 1);
+        assert_eq!(me["quota"]["remaining"], 4);
+
+        let pool = db::connect(&test_config().database).await.unwrap();
+        let task_uuid = uuid::Uuid::parse_str(&task_id).unwrap();
+        let ledger: (i64, i64, i64) = sqlx::query_as(
+            "SELECT count(*) FILTER (WHERE kind = 'reserve'),
+                    count(*) FILTER (WHERE kind = 'refund'),
+                    count(*) FILTER (WHERE kind = 'settle')
+             FROM quota_ledger WHERE task_id = $1",
+        )
+        .bind(task_uuid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(ledger, (1, 0, 1));
+    });
+}
+
+#[test]
+fn upscale_failure_refunds_and_reports_failed_no_charge() {
+    run(async {
+        let _guard = upscale_test_guard();
+        let app = test_app_with_upscaler(
+            Arc::new(DisabledMailer),
+            Arc::new(CapturingMailer {
+                codes: Mutex::new(Vec::new()),
+            }),
+            |config| config.upscaler.enabled = true,
+        )
+        .await;
+        app.upscaler.reset();
+        drain_upscale_tasks(&app.pool).await;
+        app.upscaler
+            .set_steps(vec![MockStep::Fail(UpscaleFailure::SourceInvalid(
+                "invalid_source".to_string(),
+            ))]);
+        let source = gradient_png(32, 32);
+        let reply = app.upscale("broken.png", &source, "x2").await;
+        assert_eq!(reply.status, StatusCode::OK);
+        let task_id = reply.json()["data"]["task_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let task = app.wait_final(&task_id).await;
+        assert_eq!(task["status"], "failed", "{}", task);
+        assert_eq!(task["kind"], "upscale", "{}", task);
+        assert_eq!(task["quota_units"], 0, "{}", task);
+        assert_eq!(task["no_gain"], false, "{}", task);
+        assert!(
+            task["error_msg"].as_str().unwrap().contains("放大失败"),
+            "{}",
+            task
+        );
+
+        let me = app.get("/v1/me").await.json()["data"].clone();
+        assert_eq!(me["quota"]["used"], 0);
+        assert_eq!(me["quota"]["remaining"], 5);
+
+        let pool = db::connect(&test_config().database).await.unwrap();
+        let task_uuid = uuid::Uuid::parse_str(&task_id).unwrap();
+        let ledger: (i64, i64, i64) = sqlx::query_as(
+            "SELECT count(*) FILTER (WHERE kind = 'reserve'),
+                    count(*) FILTER (WHERE kind = 'refund'),
+                    count(*) FILTER (WHERE kind = 'settle')
+             FROM quota_ledger WHERE task_id = $1",
+        )
+        .bind(task_uuid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(ledger, (1, 1, 0));
+    });
+}
+
+#[test]
+fn upscale_retries_on_busy_and_still_settles() {
+    run(async {
+        let _guard = upscale_test_guard();
+        let app = test_app_with_upscaler(
+            Arc::new(DisabledMailer),
+            Arc::new(CapturingMailer {
+                codes: Mutex::new(Vec::new()),
+            }),
+            |config| config.upscaler.enabled = true,
+        )
+        .await;
+        app.upscaler.reset();
+        drain_upscale_tasks(&app.pool).await;
+        app.upscaler.set_steps(vec![MockStep::Busy, MockStep::Busy]);
+        let source = gradient_png(32, 32);
+        let reply = app.upscale("busy.png", &source, "x2").await;
+        assert_eq!(reply.status, StatusCode::OK);
+        let task_id = reply.json()["data"]["task_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let task = app.wait_final(&task_id).await;
+        assert_eq!(task["status"], "completed", "{}", task);
+        assert_eq!(task["quota_units"], 1, "{}", task);
+
+        let me = app.get("/v1/me").await.json()["data"].clone();
+        assert_eq!(me["quota"]["used"], 1);
+    });
+}
+
+#[test]
+fn upscale_rejects_invalid_scale_convert_and_oversized_dimensions() {
+    run(async {
+        let _guard = upscale_test_guard();
+        let app = test_app_with_upscaler(
+            Arc::new(DisabledMailer),
+            Arc::new(CapturingMailer {
+                codes: Mutex::new(Vec::new()),
+            }),
+            |config| config.upscaler.enabled = true,
+        )
+        .await;
+        app.upscaler.reset();
+        drain_upscale_tasks(&app.pool).await;
+        let source = gradient_png(64, 64);
+
+        let bad_scale = app.upscale("a.png", &source, "8").await;
+        assert_eq!(bad_scale.status, StatusCode::BAD_REQUEST);
+        assert_eq!(bad_scale.json()["code"], 1001);
+
+        let missing_scale = app
+            .upscale_with_extra("b.png", &source, &[("scale", "")])
+            .await;
+        assert_eq!(missing_scale.status, StatusCode::BAD_REQUEST);
+
+        let with_convert = app
+            .upscale_with_extra("c.png", &source, &[("scale", "x2"), ("convert", "webp")])
+            .await;
+        assert_eq!(with_convert.status, StatusCode::BAD_REQUEST);
+        assert!(
+            with_convert.json()["msg"]
+                .as_str()
+                .unwrap()
+                .contains("convert"),
+            "{}",
+            with_convert.json()
+        );
+
+        let too_tall = gradient_png(8, 2049);
+        let side = app.upscale("tall.png", &too_tall, "x2").await;
+        assert_eq!(side.status, StatusCode::BAD_REQUEST);
+
+        let too_many_pixels = gradient_png(1600, 1600);
+        let pixels = app.upscale("dense.png", &too_many_pixels, "x2").await;
+        assert_eq!(pixels.status, StatusCode::BAD_REQUEST);
+
+        let oversized = vec![7u8; (20 * 1024 * 1024 + 1) as usize];
+        let too_big = app.upscale("huge.png", &oversized, "x2").await;
+        assert_eq!(too_big.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(too_big.json()["code"], 1004);
+
+        let webp_source = lossless_webp(64, 64);
+        let webp = app.upscale("pic.webp", &webp_source, "x2").await;
+        assert_eq!(webp.status, StatusCode::BAD_REQUEST);
+        assert!(
+            webp.json()["msg"].as_str().unwrap().contains("PNG"),
+            "{}",
+            webp.json()
+        );
+
+        let me = app.get("/v1/me").await.json()["data"].clone();
+        assert_eq!(me["quota"]["remaining"], 5);
+    });
+}
+
+#[test]
+fn concurrent_upscale_claims_keep_a_single_flight_across_connections() {
+    run(async {
+        let _guard = upscale_test_guard();
+        let url = test_config().database.url.clone();
+        let pool_a = sqlx::PgPool::connect(&url).await.unwrap();
+        let pool_b = sqlx::PgPool::connect(&url).await.unwrap();
+        drain_upscale_tasks(&pool_a).await;
+        let repo_a = lubanpng::repositories::task_repository::TaskRepository::new(pool_a.clone());
+        let repo_b = lubanpng::repositories::task_repository::TaskRepository::new(pool_b.clone());
+
+        let mut slot_freed = false;
+        for round in 0..8 {
+            for pool in [&pool_a, &pool_b] {
+                sqlx::query(
+                    "INSERT INTO tasks (id, subject_type, subject_id, source, status, original_name, original_size, input_key, quota_period, quota_units, kind, upscale_scale, lang)
+                     VALUES ($1, 'device', $2, 'api', 'pending', 'race.png', 100, $3, '2099-01', 1, 'upscale', 2, 'zh')",
+                )
+                .bind(uuid::Uuid::new_v4())
+                .bind(uuid::Uuid::nil())
+                .bind(format!("uploads/{}.png", uuid::Uuid::new_v4()))
+                .execute(pool)
+                .await
+                .unwrap();
+            }
+
+            let (first, second) = tokio::join!(
+                repo_a.claim_next_upscale("race-worker-a"),
+                repo_b.claim_next_upscale("race-worker-b"),
+            );
+            let claimed = first.unwrap();
+            let blocked = second.unwrap();
+            let wins = claimed.is_some() as u8 + blocked.is_some() as u8;
+            assert!(
+                wins <= 1,
+                "round {round}: concurrent claims must never win the single flight slot twice"
+            );
+            if let Some(won) = claimed.or(blocked) {
+                sqlx::query(
+                    "UPDATE tasks SET status = 'completed', progress = 100, completed_at = now(), locked_by = NULL, locked_at = NULL WHERE id = $1",
+                )
+                .bind(won.id)
+                .execute(&pool_a)
+                .await
+                .unwrap();
+
+                let next = repo_b.claim_next_upscale("race-worker-b").await.unwrap();
+                assert!(
+                    next.is_some(),
+                    "round {round}: the slot frees up once the running upscale reaches a terminal state"
+                );
+                for record in [Some(won), next] {
+                    if let Some(record) = record {
+                        sqlx::query("DELETE FROM tasks WHERE id = $1")
+                            .bind(record.id)
+                            .execute(&pool_a)
+                            .await
+                            .unwrap();
+                    }
+                }
+                slot_freed = true;
+                break;
+            }
+            drain_upscale_tasks(&pool_a).await;
+        }
+        assert!(
+            slot_freed,
+            "a claim must eventually win against stray workers and free its slot"
+        );
+    });
+}
+
+#[test]
+fn upscale_health_gate_blocks_submission_without_charging() {
+    run(async {
+        let _guard = upscale_test_guard();
+        let app = test_app_with_upscaler(
+            Arc::new(DisabledMailer),
+            Arc::new(CapturingMailer {
+                codes: Mutex::new(Vec::new()),
+            }),
+            |config| config.upscaler.enabled = true,
+        )
+        .await;
+        app.upscaler.reset();
+        drain_upscale_tasks(&app.pool).await;
+        let before: i64 = sqlx::query_scalar("SELECT count(*) FROM tasks WHERE kind = 'upscale'")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+        app.upscaler.set_healthy(false);
+        let source = gradient_png(32, 32);
+        let reply = app.upscale("gate.png", &source, "x2").await;
+        assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(reply.json()["code"], 2003);
+
+        let me = app.get("/v1/me").await.json()["data"].clone();
+        assert_eq!(me["quota"]["remaining"], 5);
+
+        let after: i64 = sqlx::query_scalar("SELECT count(*) FROM tasks WHERE kind = 'upscale'")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+        assert_eq!(after, before);
+    });
+}
+
+#[test]
+fn upscale_queue_limit_and_single_flight_are_enforced() {
+    run(async {
+        let _guard = upscale_test_guard();
+        let app = test_app_with_upscaler(
+            Arc::new(DisabledMailer),
+            Arc::new(CapturingMailer {
+                codes: Mutex::new(Vec::new()),
+            }),
+            |config| {
+                config.upscaler.enabled = true;
+                config.upscaler.queue_depth_limit = 3;
+            },
+        )
+        .await;
+        app.upscaler.reset();
+        drain_upscale_tasks(&app.pool).await;
+        app.upscaler
+            .set_steps(vec![MockStep::Hold(Duration::from_secs(4))]);
+        let source = gradient_png(32, 32);
+
+        let first = app.upscale("one.png", &source, "x2").await;
+        assert_eq!(first.status, StatusCode::OK);
+        let second = app.upscale("two.png", &source, "x2").await;
+        assert_eq!(second.status, StatusCode::OK);
+        let third = app.upscale("three.png", &source, "x2").await;
+        assert_eq!(third.status, StatusCode::OK);
+
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        let (processing, pending): (i64, i64) = sqlx::query_as(
+            "SELECT count(*) FILTER (WHERE status = 'processing'),
+                    count(*) FILTER (WHERE status = 'pending')
+             FROM tasks WHERE kind = 'upscale'",
+        )
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+        assert_eq!(processing, 1, "upscale must run one at a time");
+        assert_eq!(pending, 2);
+
+        let fourth = app.upscale("four.png", &source, "x2").await;
+        assert_eq!(fourth.status, StatusCode::TOO_MANY_REQUESTS);
+        let body = fourth.json();
+        assert_eq!(body["code"], 4004, "{}", body);
+        assert_eq!(body["data"]["queue_depth"], 3, "{}", body);
+        assert_eq!(body["data"]["retry_after"], 30, "{}", body);
+        assert_eq!(fourth.headers["retry-after"], "30");
+
+        let first_id = first.json()["data"]["task_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let task = app.wait_final(&first_id).await;
+        assert_eq!(task["status"], "completed", "{}", task);
+        for reply in [second, third] {
+            let id = reply.json()["data"]["task_id"]
+                .as_str()
+                .unwrap()
+                .to_string();
+            let drained = app.wait_final(&id).await;
+            assert_eq!(drained["status"], "completed", "{}", drained);
+        }
+    });
+}
+
+#[test]
+fn upscale_disabled_returns_service_unavailable() {
+    run(async {
+        let _guard = upscale_test_guard();
+        let app = test_app_with_upscaler(
+            Arc::new(DisabledMailer),
+            Arc::new(CapturingMailer {
+                codes: Mutex::new(Vec::new()),
+            }),
+            |config| config.upscaler.enabled = false,
+        )
+        .await;
+        app.upscaler.reset();
+        drain_upscale_tasks(&app.pool).await;
+        let source = gradient_png(32, 32);
+        let reply = app.upscale("off.png", &source, "x2").await;
+        assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
+        let me = app.get("/v1/me").await.json()["data"].clone();
+        assert_eq!(me["quota"]["remaining"], 5);
     });
 }

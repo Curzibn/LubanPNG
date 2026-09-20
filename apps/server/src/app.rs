@@ -8,6 +8,7 @@ use crate::infrastructure::compression::{
 };
 use crate::infrastructure::mail::Mailer;
 use crate::infrastructure::storage::ObjectStorage;
+use crate::infrastructure::upscale::Upscaler;
 use crate::middleware;
 use crate::repositories::identity_repository::IdentityRepository;
 use crate::repositories::quota_repository::QuotaRepository;
@@ -19,6 +20,7 @@ use crate::response;
 use crate::services::auth::AuthService;
 use crate::services::compression::CompressionService;
 use crate::services::quota::QuotaService;
+use crate::services::upscale::UpscaleService;
 use crate::services::worker;
 use crate::shells::{serve_static_shell, ShellTable};
 use axum::extract::{DefaultBodyLimit, State};
@@ -70,6 +72,7 @@ async fn serve_spa(uri: Uri, State(index): State<SpaIndex>) -> Response {
 pub struct AppState {
     pub config: AppConfig,
     pub compression: Arc<CompressionService>,
+    pub upscale: Arc<UpscaleService>,
     pub auth: Arc<AuthService>,
     pub quota: Arc<QuotaService>,
     pub tasks: Arc<TaskRepository>,
@@ -83,6 +86,7 @@ pub fn build_state(
     pool: PgPool,
     storage: Arc<dyn ObjectStorage>,
     mailer: Arc<dyn Mailer>,
+    upscaler: Arc<dyn Upscaler>,
 ) -> Arc<AppState> {
     let tasks = Arc::new(TaskRepository::new(pool.clone()));
     let identity = Arc::new(IdentityRepository::new(pool.clone()));
@@ -102,8 +106,16 @@ pub fn build_state(
         tasks.clone(),
         identity.clone(),
         quota.clone(),
-        storage,
+        storage.clone(),
         strategies,
+        config.clone(),
+    ));
+    let upscale = Arc::new(UpscaleService::new(
+        tasks.clone(),
+        identity.clone(),
+        quota.clone(),
+        storage.clone(),
+        upscaler,
         config.clone(),
     ));
     let auth = Arc::new(AuthService::new(
@@ -117,6 +129,7 @@ pub fn build_state(
     Arc::new(AppState {
         config,
         compression,
+        upscale,
         auth,
         quota,
         tasks,
@@ -129,6 +142,7 @@ pub fn build_state(
 pub fn start_workers(state: &Arc<AppState>, worker_count: usize) -> Vec<JoinHandle<()>> {
     worker::spawn_workers(
         state.compression.clone(),
+        state.upscale.clone(),
         state.tasks.clone(),
         state.rate_limits.clone(),
         state.visits.clone(),
@@ -159,6 +173,7 @@ impl Modify for ApiKeySecurity {
 #[openapi(
     paths(
         handlers::image::upload_image,
+        handlers::image::upscale_image,
         handlers::image::get_task_status,
         handlers::download::download_file,
         handlers::me::me,
@@ -178,6 +193,7 @@ impl Modify for ApiKeySecurity {
         response::ApiResponse<handlers::me::MeView>,
         response::ApiResponseError,
         handlers::image::UploadForm,
+        handlers::image::UpscaleForm,
         handlers::image::UploadResponse,
         crate::services::compression::TaskStatusView,
         handlers::me::MeView,
@@ -199,13 +215,14 @@ impl Modify for ApiKeySecurity {
     modifiers(&ApiKeySecurity),
     tags(
         (name = "图片压缩", description = "上传、状态查询与下载；网页、API、CLI 共用一份额度"),
+        (name = "图片放大", description = "上传静态图片按 x2 或 x4 放大，输出 PNG；与压缩共用一份额度，失败不计次"),
         (name = "账号", description = "邮箱验证码登录、API Key 与本期额度"),
         (name = "埋点", description = "网页访问事件，服务端补齐身份、IP 与 UA")
     ),
     info(
         title = "LubanPNG API",
-        description = "TinyPNG 式图片压缩服务。API Key 放在 Authorization: Bearer 头；每个响应带 X-Quota-Limit / X-Quota-Remaining / X-Quota-Reset。",
-        version = "1.0.0"
+        description = "TinyPNG 式图片压缩与放大服务。API Key 放在 Authorization: Bearer 头；每个响应带 X-Quota-Limit / X-Quota-Remaining / X-Quota-Reset。",
+        version = "1.1.0"
     )
 )]
 pub struct ApiDoc;
@@ -214,6 +231,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let max_upload = state.config.server.max_upload_size;
     let api = Router::new()
         .route("/v1/images/compress", post(handlers::image::upload_image))
+        .route("/v1/images/upscale", post(handlers::image::upscale_image))
         .route(
             "/v1/images/compress/{task_id}",
             get(handlers::image::get_task_status),
@@ -258,7 +276,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     if static_dir.is_dir() {
         let index_path = static_dir.join("index.html");
         let index = std::fs::read_to_string(&index_path).unwrap_or_default();
-        let spa = Router::new().fallback(serve_spa).with_state(Arc::new(index));
+        let spa = Router::new()
+            .fallback(serve_spa)
+            .with_state(Arc::new(index));
         let shells = Arc::new(ShellTable::load(static_dir));
         let web: Router = Router::new()
             .fallback_service(ServeDir::new(static_dir).fallback(spa))
@@ -313,30 +333,23 @@ mod tests {
 
         let fetch = |path: &str| {
             let service = service.clone();
-            let request = Request::builder()
-                .uri(path)
-                .body(Body::empty())
-                .unwrap();
+            let request = Request::builder().uri(path).body(Body::empty()).unwrap();
             async move { service.oneshot(request).await.unwrap() }
         };
 
         let robots = fetch("/robots.txt").await;
         assert_eq!(robots.status(), StatusCode::OK);
-        assert!(
-            robots.headers()[header::CONTENT_TYPE]
-                .to_str()
-                .unwrap()
-                .starts_with("text/plain")
-        );
+        assert!(robots.headers()[header::CONTENT_TYPE]
+            .to_str()
+            .unwrap()
+            .starts_with("text/plain"));
 
         let sitemap = fetch("/sitemap.xml").await;
         assert_eq!(sitemap.status(), StatusCode::OK);
-        assert!(
-            sitemap.headers()[header::CONTENT_TYPE]
-                .to_str()
-                .unwrap()
-                .contains("xml")
-        );
+        assert!(sitemap.headers()[header::CONTENT_TYPE]
+            .to_str()
+            .unwrap()
+            .contains("xml"));
 
         let page = fetch("/pricing").await;
         assert_eq!(page.status(), StatusCode::OK);

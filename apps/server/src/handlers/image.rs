@@ -1,6 +1,7 @@
 use crate::app::AppState;
 use crate::domain::compression::{Background, ConversionRequest, OutputFormat};
 use crate::domain::subject::Subject;
+use crate::domain::task::UpscaleScale;
 use crate::error::AppError;
 use crate::handlers::extract::ClientMeta;
 use crate::i18n::{Lang, Msg};
@@ -32,6 +33,16 @@ pub struct UploadForm {
 pub struct UploadResponse {
     #[schema(example = "550e8400-e29b-41d4-a716-446655440000")]
     pub task_id: String,
+}
+
+#[derive(ToSchema)]
+pub struct UpscaleForm {
+    #[schema(value_type = String, format = Binary)]
+    #[allow(dead_code)]
+    pub file: String,
+    #[schema(example = "x4")]
+    #[allow(dead_code)]
+    pub scale: String,
 }
 
 #[derive(Deserialize, IntoParams)]
@@ -94,6 +105,55 @@ pub async fn upload_image(
 }
 
 #[utoipa::path(
+    post,
+    path = "/v1/images/upscale",
+    tag = "图片放大",
+    request_body(
+        content = UpscaleForm,
+        content_type = "multipart/form-data",
+        description = "上传一张静态 PNG 或 JPEG 图片，按 scale（x2 或 x4）放大，输出固定为 PNG 并计减 1 次额度；输入上限 2.25MP、单边 2048、20MB；失败或超时不计次；排队上限 10，超限返回 429",
+    ),
+    responses(
+        (status = 200, description = "已入队", body = ApiResponse<UploadResponse>),
+        (status = 400, description = "参数错误、尺寸超限或格式不支持（仅 PNG/JPEG）", body = ApiResponseError),
+        (status = 413, description = "文件超过放大输入上限（20MB）", body = ApiResponseError),
+        (status = 429, description = "本期额度用尽、触发限速或放大队列已满", body = ApiResponseError),
+        (status = 503, description = "放大服务不可用", body = ApiResponseError),
+    ),
+    security(("api_key" = []))
+)]
+pub async fn upscale_image(
+    State(state): State<Arc<AppState>>,
+    Extension(subject): Extension<Subject>,
+    Extension(meta): Extension<ClientMeta>,
+    Extension(lang): Extension<Lang>,
+    multipart: Multipart,
+) -> Result<Json<ApiResponse<UploadResponse>>, AppError> {
+    let upload =
+        parse_upscale_multipart(multipart, state.config.server.max_upload_size, lang).await?;
+    if !subject.is_account() {
+        let allowed = state
+            .rate_limits
+            .hit(
+                &format!("upscale:ip:{}", meta.ip),
+                86_400,
+                state.config.limits.upscale_anonymous_per_ip_per_day as i64,
+            )
+            .await?;
+        if !allowed {
+            return Err(AppError::rate_limited(Msg::AnonymousDailyQuotaUsed, lang));
+        }
+    }
+    let task = state
+        .upscale
+        .submit(&subject, upload.data, &upload.filename, upload.scale, lang)
+        .await?;
+    Ok(Json(ApiResponse::success(UploadResponse {
+        task_id: task.id.to_string(),
+    })))
+}
+
+#[utoipa::path(
     get,
     path = "/v1/images/compress/{task_id}",
     tag = "图片压缩",
@@ -147,6 +207,60 @@ pub struct UploadRequest {
     pub data: Bytes,
     pub filename: String,
     pub conversion: Option<ConversionRequest>,
+}
+
+pub struct UpscaleRequest {
+    pub data: Bytes,
+    pub filename: String,
+    pub scale: UpscaleScale,
+}
+
+async fn parse_upscale_multipart(
+    mut multipart: Multipart,
+    max_size: u64,
+    lang: Lang,
+) -> Result<UpscaleRequest, AppError> {
+    let mut file_data: Option<Bytes> = None;
+    let mut filename: Option<String> = None;
+    let mut scale: Option<String> = None;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| multipart_error(e, max_size, lang))?
+    {
+        match field.name() {
+            Some("file") => {
+                filename = field.file_name().map(|s| s.to_string());
+                let data = field
+                    .bytes()
+                    .await
+                    .map_err(|e| multipart_error(e, max_size, lang))?;
+                file_data = Some(data);
+            }
+            Some("scale") => {
+                scale = Some(
+                    field
+                        .text()
+                        .await
+                        .map_err(|e| multipart_error(e, max_size, lang))?,
+                );
+            }
+            Some("convert") | Some("background") => {
+                return Err(AppError::validation(Msg::UpscaleConvertUnsupported, lang));
+            }
+            _ => {}
+        }
+    }
+
+    let data = file_data.ok_or_else(|| AppError::validation(Msg::FileEmpty, lang))?;
+    let scale = UpscaleScale::parse(scale.as_deref().unwrap_or(""))
+        .ok_or_else(|| AppError::validation(Msg::UpscaleScaleInvalid, lang))?;
+    Ok(UpscaleRequest {
+        data,
+        filename: filename.unwrap_or_else(|| "image".to_string()),
+        scale,
+    })
 }
 
 pub fn parse_conversion(

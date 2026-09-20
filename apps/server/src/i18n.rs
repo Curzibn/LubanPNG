@@ -50,9 +50,13 @@ impl Lang {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Msg {
     InvalidEmail,
-    InvalidEmailDetail { detail: String },
+    InvalidEmailDetail {
+        detail: String,
+    },
     MailUnavailable,
-    MailSendFailed { detail: String },
+    MailSendFailed {
+        detail: String,
+    },
     OtpTooFrequent,
     OtpExpired,
     OtpTooManyAttempts,
@@ -61,11 +65,15 @@ pub enum Msg {
     ApiKeyInvalid,
     ApiKeyRevoked,
     KeyNameInvalid,
-    KeyLimitReached { max: i32 },
+    KeyLimitReached {
+        max: i32,
+    },
     KeyNotFound,
     KeyMissingOrRevoked,
     TaskNotFound,
-    TaskNotFoundWithId { id: String },
+    TaskNotFoundWithId {
+        id: String,
+    },
     FileNotFound,
     FileNotFoundOrExpired,
     FileEmpty,
@@ -79,14 +87,49 @@ pub enum Msg {
     PlanIdRequired,
     PlanIdInvalid,
     EndpointNotFound,
-    ParseFormFailed { detail: String },
+    ParseFormFailed {
+        detail: String,
+    },
     AnonymousDailyQuotaUsed,
     AnimatedConversionUnsupported,
     BackgroundRequired,
-    FileTooLarge { size_mb: f64, max_size_mb: f64 },
-    FileTooLargeMissingSize { max_size_mb: f64 },
-    QuotaExceeded { resets_at: String },
-    CompressionFailed { detail: String },
+    FileTooLarge {
+        size_mb: f64,
+        max_size_mb: f64,
+    },
+    FileTooLargeMissingSize {
+        max_size_mb: f64,
+    },
+    QuotaExceeded {
+        resets_at: String,
+    },
+    CompressionFailed {
+        detail: String,
+    },
+    UpscaleScaleInvalid,
+    UpscaleConvertUnsupported,
+    UpscaleAnimatedUnsupported,
+    UpscaleFormatUnsupported,
+    UpscalePixelsTooLarge {
+        megapixels: f64,
+        max_megapixels: f64,
+    },
+    UpscaleSideTooLong {
+        side: i64,
+        max_side: i64,
+    },
+    UpscaleOutputTooLarge {
+        size_mb: f64,
+        max_size_mb: f64,
+    },
+    UpscaleUnavailable,
+    UpscaleQueueFull {
+        depth: i64,
+        retry_after_secs: i64,
+    },
+    UpscaleFailed {
+        detail: String,
+    },
 }
 
 impl Msg {
@@ -158,6 +201,34 @@ impl Msg {
                 format!("本期额度已用完，{} 重置", resets_at)
             }
             Msg::CompressionFailed { detail } => format!("压缩失败: {}", detail),
+            Msg::UpscaleScaleInvalid => "scale 只支持 x2、x4".to_string(),
+            Msg::UpscaleConvertUnsupported => "放大不支持 convert 参数，输出固定为 PNG".to_string(),
+            Msg::UpscaleAnimatedUnsupported => "动图暂不支持放大，请上传静态图片".to_string(),
+            Msg::UpscaleFormatUnsupported => "放大仅支持 PNG、JPEG 图片".to_string(),
+            Msg::UpscalePixelsTooLarge {
+                megapixels,
+                max_megapixels,
+            } => format!(
+                "放大输入最大 {:.2} MP，当前 {:.2} MP；请先缩小后再放大",
+                max_megapixels, megapixels
+            ),
+            Msg::UpscaleSideTooLong { side, max_side } => format!(
+                "放大输入单边最长 {}，当前 {}；请先缩小后再放大",
+                max_side, side
+            ),
+            Msg::UpscaleOutputTooLarge {
+                size_mb,
+                max_size_mb,
+            } => format!("放大产物 {:.2} MB 超过 {:.2} MB 上限", size_mb, max_size_mb),
+            Msg::UpscaleUnavailable => "放大服务暂不可用，请稍后再试".to_string(),
+            Msg::UpscaleQueueFull {
+                depth,
+                retry_after_secs,
+            } => format!(
+                "放大队列已满（当前深度 {}），请 {} 秒后重试",
+                depth, retry_after_secs
+            ),
+            Msg::UpscaleFailed { detail } => format!("放大失败: {}", detail),
         }
     }
 
@@ -241,6 +312,43 @@ impl Msg {
                 format!("Your quota for this period is used up; it resets at {}", resets_at)
             }
             Msg::CompressionFailed { detail } => format!("Compression failed: {}", detail),
+            Msg::UpscaleScaleInvalid => "scale only supports x2 and x4".to_string(),
+            Msg::UpscaleConvertUnsupported => {
+                "convert is not supported for upscaling; the output is always PNG".to_string()
+            }
+            Msg::UpscaleAnimatedUnsupported => {
+                "Animated images cannot be upscaled yet; upload a static image".to_string()
+            }
+            Msg::UpscaleFormatUnsupported => {
+                "Upscaling only supports PNG and JPEG images".to_string()
+            }
+            Msg::UpscalePixelsTooLarge {
+                megapixels,
+                max_megapixels,
+            } => format!(
+                "Upscaling accepts inputs up to {:.2} MP, this one is {:.2} MP; shrink it first",
+                max_megapixels, megapixels
+            ),
+            Msg::UpscaleSideTooLong { side, max_side } => format!(
+                "Upscaling accepts sides up to {} px, this one is {} px; shrink it first",
+                max_side, side
+            ),
+            Msg::UpscaleOutputTooLarge { size_mb, max_size_mb } => format!(
+                "The upscaled image is {:.2} MB, over the {:.2} MB limit",
+                size_mb, max_size_mb
+            ),
+            Msg::UpscaleUnavailable => {
+                "The upscaling service is temporarily unavailable, please try again later"
+                    .to_string()
+            }
+            Msg::UpscaleQueueFull {
+                depth,
+                retry_after_secs,
+            } => format!(
+                "The upscaling queue is full (depth {}); retry in {} seconds",
+                depth, retry_after_secs
+            ),
+            Msg::UpscaleFailed { detail } => format!("Upscaling failed: {}", detail),
         }
     }
 }

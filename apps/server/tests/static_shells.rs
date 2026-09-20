@@ -77,7 +77,13 @@ fn router_with_static(static_dir: &Path) -> Router {
     config.database.url = "postgres://127.0.0.1:1/lubanpng_offline".to_string();
     let pool = sqlx::PgPool::connect_lazy(&config.database.url).expect("lazy postgres pool");
     let storage = Arc::new(S3Storage::from_config(&config.storage).expect("storage config"));
-    let state = build_state(config, pool, storage, Arc::new(DisabledMailer));
+    let state = build_state(
+        config,
+        pool,
+        storage,
+        Arc::new(DisabledMailer),
+        Arc::new(lubanpng::infrastructure::upscale::DisabledUpscaler),
+    );
     build_router(state)
 }
 

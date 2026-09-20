@@ -3,6 +3,7 @@ use lubanpng::config::AppConfig;
 use lubanpng::infrastructure::db;
 use lubanpng::infrastructure::mail::{DisabledMailer, Mailer, SmtpMailer};
 use lubanpng::infrastructure::storage::{ObjectStorage, S3Storage};
+use lubanpng::infrastructure::upscale::{DisabledUpscaler, Mg2Upscaler, Upscaler};
 use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 
@@ -24,10 +25,17 @@ async fn main() {
         tracing::warn!("SMTP 未配置，验证码登录不可用");
         Arc::new(DisabledMailer)
     };
+    let upscaler: Arc<dyn Upscaler> =
+        if config.upscaler.enabled && !config.upscaler.endpoint.is_empty() {
+            Arc::new(Mg2Upscaler::new(&config.upscaler))
+        } else {
+            tracing::warn!("放大服务未配置或未启用，/v1/images/upscale 返回 503");
+            Arc::new(DisabledUpscaler)
+        };
 
     let worker_count = config.server.max_concurrent_tasks;
     let bind_addr = format!("{}:{}", config.server.host, config.server.port);
-    let state = build_state(config, pool, storage, mailer);
+    let state = build_state(config, pool, storage, mailer, upscaler);
     let _workers = start_workers(&state, worker_count);
     tracing::info!(workers = worker_count, "worker pool started");
 

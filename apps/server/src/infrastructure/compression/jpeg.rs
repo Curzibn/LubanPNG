@@ -141,6 +141,9 @@ mod tests {
         let config = crate::config::JpegSmartConfig::default();
         let data = encode_jpeg_smart(&rgb, 80, &config, 100).unwrap();
         assert_eq!(&data[..2], &[0xFF, 0xD8]);
-        assert_eq!(image::load_from_memory(&data).unwrap().dimensions(), (64, 64));
+        assert_eq!(
+            image::load_from_memory(&data).unwrap().dimensions(),
+            (64, 64)
+        );
     }
 }

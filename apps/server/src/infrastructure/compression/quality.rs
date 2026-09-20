@@ -53,7 +53,11 @@ mod tests {
     fn ssim_identical_images_score_one() {
         let img = photo_like_image(64, 64).to_rgb8();
         let score = calculate_ssim(&img, &img).unwrap();
-        assert!(score > 0.999, "identical images should score ~1.0, got {}", score);
+        assert!(
+            score > 0.999,
+            "identical images should score ~1.0, got {}",
+            score
+        );
     }
 
     #[test]
@@ -64,7 +68,11 @@ mod tests {
             pixel.0 = pixel.0.map(|c| c.saturating_sub(40));
         }
         let score = calculate_ssim(&original, &degraded).unwrap();
-        assert!(score < 0.95, "shifted image should score below 0.95, got {}", score);
+        assert!(
+            score < 0.95,
+            "shifted image should score below 0.95, got {}",
+            score
+        );
     }
 
     #[test]

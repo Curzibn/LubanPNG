@@ -31,7 +31,11 @@ pub fn compress_apng(input: &[u8], config: &AppConfig) -> AppResult<Vec<u8>> {
     let buffers: Vec<RgbaImage> = frames.iter().map(|frame| frame.buffer().clone()).collect();
     let delays: Vec<u16> = frames
         .iter()
-        .map(|frame| frame_delay_millis(frame).round().clamp(0.0, f64::from(u16::MAX)) as u16)
+        .map(|frame| {
+            frame_delay_millis(frame)
+                .round()
+                .clamp(0.0, f64::from(u16::MAX)) as u16
+        })
         .collect();
     let plays = probe::png_animation(input)
         .map(|animation| animation.plays)
@@ -148,9 +152,18 @@ pub mod tests {
         for frame in &frames {
             assert_eq!(frame.buffer().dimensions(), (48, 48));
             let millis = frame_delay_millis(frame);
-            assert!((millis - 80.0).abs() < 1.5, "delay {} should stay near 80ms", millis);
+            assert!(
+                (millis - 80.0).abs() < 1.5,
+                "delay {} should stay near 80ms",
+                millis
+            );
         }
-        assert!(compressed.len() < original.len(), "{} < {}", compressed.len(), original.len());
+        assert!(
+            compressed.len() < original.len(),
+            "{} < {}",
+            compressed.len(),
+            original.len()
+        );
         let expected: Duration = Delay::from_numer_denom_ms(80, 1).into();
         assert_eq!(expected, Duration::from_millis(80));
     }

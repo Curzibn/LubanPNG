@@ -30,6 +30,8 @@ pub mod codes {
     pub const UNAUTHORIZED: i32 = 4001;
     pub const FORBIDDEN: i32 = 4002;
     pub const QUOTA_EXCEEDED: i32 = 4003;
+    pub const UPSCALE_QUEUE_FULL: i32 = 4004;
+    pub const UPSCALE_OUTPUT_TOO_LARGE: i32 = 4005;
 }
 
 #[derive(Debug, Serialize, ToSchema)]
