@@ -32,7 +32,7 @@ spec:
                     app: lubanpng
       containers:
         - name: server
-          image: registry.opus.wizthink.cn:5000/lubanpng/server@sha256:6ebafdaf47ffd0b547e7158d642706a1ee5ad2988c3b0861c4f498a5f2600fb4
+          image: registry.opus.wizthink.cn:5000/lubanpng/server@sha256:4e7f77c430fe51b55e028edb6cf7b7e16aea0de040a5843d575d12b046ffa609
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
