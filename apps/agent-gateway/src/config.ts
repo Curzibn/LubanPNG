@@ -19,6 +19,7 @@ export interface GatewayConfig {
   x402UpscaleDailyLimit: number;
   statusWaitMaxSeconds: number;
   upstreamTimeoutMs: number;
+  paidJobWaitMs: number;
   trustClientIp: boolean;
 }
 
@@ -65,6 +66,7 @@ export function loadConfig(): GatewayConfig {
     x402UpscaleDailyLimit: readInt("AGENT_GATEWAY_X402_UPSCALE_DAILY_LIMIT", 500),
     statusWaitMaxSeconds: readInt("AGENT_GATEWAY_STATUS_WAIT_MAX", 30),
     upstreamTimeoutMs: readInt("AGENT_GATEWAY_UPSTREAM_TIMEOUT_MS", 120_000),
+    paidJobWaitMs: readInt("AGENT_GATEWAY_PAID_JOB_WAIT_MS", 50_000),
     trustClientIp: readBool("AGENT_GATEWAY_TRUST_CLIENT_IP", true),
   };
 }

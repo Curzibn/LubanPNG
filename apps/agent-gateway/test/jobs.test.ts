@@ -104,3 +104,27 @@ describe("runCompress billing", () => {
     }
   });
 });
+
+describe("paid channel wait budget", () => {
+  test("a job still running at the deadline is not billed", async () => {
+    const { runCompress } = await import("../src/jobs.ts");
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = String(input);
+      const payload = url.includes("/v1/images/compress/")
+        ? { code: 0, msg: "success", data: task({ status: "processing", downloadable: false, compressed_size: null }) }
+        : { code: 0, msg: "success", data: { task_id: "t1" } };
+      return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+    try {
+      const LubanPngClient = (await import("../src/lubanpng-client.ts")).LubanPngClient;
+      const client = new LubanPngClient(config);
+      const outcome = await runCompress(client, config, { data: new Uint8Array([1]), filename: "a.png" }, { session: {} }, undefined, 1);
+      expect(outcome.timedOut).toBe(true);
+      expect(outcome.billable).toBe(false);
+      expect(settlementAmount(config, "compress", outcome.billable)).toBe("0");
+    } finally {
+      globalThis.fetch = original;
+    }
+  }, 10_000);
+});

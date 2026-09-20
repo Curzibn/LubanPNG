@@ -15,6 +15,7 @@ export interface JobOutcome {
   billable: boolean;
   downloadUrl: string | null;
   quotaRemaining?: number;
+  timedOut?: boolean;
 }
 
 export interface JobPayload extends Record<string, unknown> {
@@ -92,13 +93,14 @@ async function waitForTask(
   taskId: string,
   options: RequestOptions,
   onCookie?: (cookie: string) => void,
-): Promise<{ task: TaskView; quotaRemaining?: number }> {
-  const deadline = Date.now() + config.upstreamTimeoutMs;
+  budgetMs?: number,
+): Promise<{ task: TaskView; quotaRemaining?: number; timedOut: boolean }> {
+  const deadline = Date.now() + (budgetMs ?? config.upstreamTimeoutMs);
   let current = await client.taskStatus(taskId, config.statusWaitMaxSeconds, options, onCookie);
   while (isRunning(current.data) && Date.now() < deadline) {
     current = await client.taskStatus(taskId, config.statusWaitMaxSeconds, options, onCookie);
   }
-  return { task: current.data, quotaRemaining: current.quota.remaining };
+  return { task: current.data, quotaRemaining: current.quota.remaining, timedOut: isRunning(current.data) };
 }
 
 export async function submitAndWait(
@@ -107,14 +109,16 @@ export async function submitAndWait(
   submit: (options: RequestOptions) => Promise<{ task_id: string }>,
   options: RequestOptions,
   onCookie?: (cookie: string) => void,
+  budgetMs?: number,
 ): Promise<JobOutcome> {
   const submitted = await submit(options);
-  const settled = await waitForTask(client, config, submitted.task_id, options, onCookie);
+  const settled = await waitForTask(client, config, submitted.task_id, options, onCookie, budgetMs);
   return {
     task: settled.task,
     billable: isBillable(settled.task),
     downloadUrl: downloadUrlFor(client, settled.task),
     quotaRemaining: settled.quotaRemaining,
+    timedOut: settled.timedOut,
   };
 }
 
@@ -124,6 +128,7 @@ export function runCompress(
   input: UploadInput,
   options: RequestOptions,
   onCookie?: (cookie: string) => void,
+  budgetMs?: number,
 ): Promise<JobOutcome> {
   return submitAndWait(
     config,
@@ -131,6 +136,7 @@ export function runCompress(
     (opts) => client.compress(input, opts, onCookie).then((result) => result.data),
     options,
     onCookie,
+    budgetMs,
   );
 }
 
@@ -140,6 +146,7 @@ export function runUpscale(
   input: UpscaleInput,
   options: RequestOptions,
   onCookie?: (cookie: string) => void,
+  budgetMs?: number,
 ): Promise<JobOutcome> {
   return submitAndWait(
     config,
@@ -147,5 +154,6 @@ export function runUpscale(
     (opts) => client.upscale(input, opts, onCookie).then((result) => result.data),
     options,
     onCookie,
+    budgetMs,
   );
 }

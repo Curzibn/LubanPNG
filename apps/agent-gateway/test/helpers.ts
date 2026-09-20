@@ -22,6 +22,7 @@ export function testConfig(overrides: Partial<GatewayConfig> = {}): GatewayConfi
     x402UpscaleDailyLimit: 500,
     statusWaitMaxSeconds: 30,
     upstreamTimeoutMs: 120_000,
+    paidJobWaitMs: 50_000,
     trustClientIp: true,
     ...overrides,
   };

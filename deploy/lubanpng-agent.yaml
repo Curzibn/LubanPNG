@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
         - name: gateway
-          image: registry.opus.wizthink.cn:5000/lubanpng/agent-gateway@sha256:6ef8192ded39898d8e5629d70ee4931d4375eb9db5e22e39ee49f6251e39efd9
+          image: registry.opus.wizthink.cn:5000/lubanpng/agent-gateway@sha256:fcda7d2faf6d61305e243fc21751f0fed8d10b9d8232950b77a59b3a3664b3bd
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -66,6 +66,8 @@ spec:
               value: "30"
             - name: AGENT_GATEWAY_UPSTREAM_TIMEOUT_MS
               value: "120000"
+            - name: AGENT_GATEWAY_PAID_JOB_WAIT_MS
+              value: "50000"
             - name: AGENT_GATEWAY_TRUST_CLIENT_IP
               value: "true"
           resources:

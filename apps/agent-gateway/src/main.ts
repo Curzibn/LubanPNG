@@ -228,6 +228,8 @@ export async function handlePaid(req: Request, kind: JobKind): Promise<Response>
               .upscale({ data: input.data, filename: input.filename, scale: input.scale ?? "x2" }, opts, bindCookie)
               .then((result) => result.data),
       options,
+      undefined,
+      config.paidJobWaitMs,
     );
   } catch (error) {
     const headers = await zeroHeaders().catch(() => ({}));
@@ -244,6 +246,7 @@ export async function handlePaid(req: Request, kind: JobKind): Promise<Response>
 
   const billable = outcome.billable;
   const amount = settlementAmount(config, kind, billable);
+  const stillRunning = outcome.timedOut === true || outcome.task.status === "pending" || outcome.task.status === "processing";
 
   let settleHeaders: Record<string, string>;
   try {
@@ -277,11 +280,15 @@ export async function handlePaid(req: Request, kind: JobKind): Promise<Response>
 
   if (billable) sessions.noteX402Call(kind);
   const failed = outcome.task.status === "failed";
-  const running = outcome.task.status === "pending" || outcome.task.status === "processing";
+  const running = stillRunning;
   return json(
     {
       code: failed ? 2002 : 0,
-      msg: failed ? outcome.task.error_msg ?? "job failed" : running ? "job is still running" : "success",
+      msg: failed
+        ? outcome.task.error_msg ?? "job failed"
+        : running
+          ? "job is still running; nothing was charged, poll get_task with this task_id"
+          : "success",
       data: { ...jobPayload(outcome), charged: billable, settlement: amount },
     },
     failed ? 502 : running ? 202 : 200,
