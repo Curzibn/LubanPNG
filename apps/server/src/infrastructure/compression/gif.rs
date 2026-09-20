@@ -1,6 +1,7 @@
 use crate::config::AppConfig;
 use crate::domain::compression::CompressionResult;
 use crate::error::{AppError, AppResult};
+use crate::i18n::compression;
 use crate::infrastructure::compression::apng::frame_delay_millis;
 use crate::infrastructure::compression::probe;
 use crate::infrastructure::compression::quantize::quantize_frames;
@@ -24,7 +25,7 @@ impl CompressionStrategy for GifCompressionStrategy {
 }
 
 fn gif_error(err: ::gif::EncodingError) -> AppError {
-    AppError::compression(format!("GIF 编码失败: {}", err))
+    AppError::compression(compression::gif_encode(err))
 }
 
 fn binarize_alpha(image: &RgbaImage) -> RgbaImage {
@@ -185,10 +186,10 @@ pub fn compress_gif(input: &[u8], config: &AppConfig) -> AppResult<Vec<u8>> {
         .collect_frames()?;
     let first = frames
         .first()
-        .ok_or_else(|| AppError::compression("GIF 没有可用的帧"))?;
+        .ok_or_else(|| AppError::compression(compression::gif_no_frames()))?;
     let (width, height) = first.buffer().dimensions();
     if width > u32::from(u16::MAX) || height > u32::from(u16::MAX) {
-        return Err(AppError::compression("GIF 尺寸超出格式上限"));
+        return Err(AppError::compression(compression::gif_too_large()));
     }
     let buffers: Vec<RgbaImage> = frames
         .iter()
@@ -208,7 +209,7 @@ pub fn compress_gif(input: &[u8], config: &AppConfig) -> AppResult<Vec<u8>> {
         if reserve_transparent { 255 } else { 256 },
         transparent_source,
     )
-    .map_err(|e| AppError::compression(format!("GIF 量化失败: {}", e)))?;
+    .map_err(|e| AppError::compression(compression::gif_quantize(e)))?;
     let mut palette = std::mem::take(&mut quantized.palette);
     let transparent = if reserve_transparent {
         palette.push(RGBA {
@@ -256,6 +257,7 @@ pub fn compress_gif(input: &[u8], config: &AppConfig) -> AppResult<Vec<u8>> {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::i18n::Lang;
     use image::codecs::gif::{GifEncoder, Repeat};
     use image::{Delay, DynamicImage};
 
@@ -348,6 +350,28 @@ pub mod tests {
         }
         assert_eq!(probe::gif_loop_count(&compressed), Some(0));
         assert!(compressed.len() < original.len(), "{} < {}", compressed.len(), original.len());
+    }
+
+    #[tokio::test]
+    async fn broken_gif_failure_renders_in_request_language() {
+        let mut broken = b"GIF89a".to_vec();
+        broken.extend_from_slice(&[0u8; 64]);
+
+        let err = match GifCompressionStrategy
+            .compress(&broken, &AppConfig::default())
+            .await
+        {
+            Ok(_) => panic!("broken gif should fail"),
+            Err(err) => err,
+        };
+        let zh = err.message();
+        assert!(zh.starts_with("压缩失败: 图片处理错误:"), "{zh}");
+        let en = err.with_lang(Lang::En).message();
+        assert!(
+            en.starts_with("Compression failed: Image processing failed:"),
+            "{en}"
+        );
+        assert!(!en.contains('文'), "{en}");
     }
 
     #[test]

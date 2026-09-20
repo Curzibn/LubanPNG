@@ -1262,6 +1262,53 @@ fn english_requests_localize_validation_auth_and_lookup_errors() {
     });
 }
 
+fn has_cjk(value: &str) -> bool {
+    value.chars().any(|c| {
+        matches!(
+            c,
+            '\u{3000}'..='\u{303f}' | '\u{4e00}'..='\u{9fff}' | '\u{ff00}'..='\u{ffef}'
+        )
+    })
+}
+
+#[test]
+fn compression_failure_message_follows_request_language() {
+    run(async {
+        let app = test_app().await;
+        let mut broken_gif = b"GIF89a".to_vec();
+        broken_gif.extend_from_slice(&[0u8; 64]);
+
+        let en = app
+            .upload_with_language("broken.gif", &broken_gif, "en-US,en;q=0.9")
+            .await;
+        assert_eq!(
+            en.status,
+            StatusCode::OK,
+            "{}",
+            String::from_utf8_lossy(&en.body)
+        );
+        let en_task_id = en.json()["data"]["task_id"].as_str().unwrap().to_string();
+        let en_task = app.wait_final(&en_task_id).await;
+        assert_eq!(en_task["status"], "failed", "{}", en_task);
+        let en_msg = en_task["error_msg"].as_str().unwrap().to_string();
+        assert!(
+            en_msg.starts_with("Compression failed: Image processing failed:"),
+            "{en_msg}"
+        );
+        assert!(!has_cjk(&en_msg), "{en_msg}");
+
+        let zh = app
+            .upload_with_language("broken.gif", &broken_gif, "zh-CN")
+            .await;
+        assert_eq!(zh.status, StatusCode::OK);
+        let zh_task_id = zh.json()["data"]["task_id"].as_str().unwrap().to_string();
+        let zh_task = app.wait_final(&zh_task_id).await;
+        assert_eq!(zh_task["status"], "failed", "{}", zh_task);
+        let zh_msg = zh_task["error_msg"].as_str().unwrap().to_string();
+        assert!(zh_msg.starts_with("压缩失败: 图片处理错误:"), "{zh_msg}");
+    });
+}
+
 #[test]
 fn verification_email_follows_request_language() {
     run(async {

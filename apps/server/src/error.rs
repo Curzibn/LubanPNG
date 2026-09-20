@@ -1,4 +1,4 @@
-use crate::i18n::{Lang, Msg};
+use crate::i18n::{compression, CompressionDetail, Lang, Msg};
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -44,7 +44,7 @@ pub enum AppError {
     },
     Internal(String),
     Compression {
-        detail: String,
+        detail: CompressionDetail,
         lang: Lang,
     },
     Config(String),
@@ -91,9 +91,9 @@ impl AppError {
         Self::Internal(msg.into())
     }
 
-    pub fn compression(detail: impl Into<String>) -> Self {
+    pub fn compression(detail: CompressionDetail) -> Self {
         Self::Compression {
-            detail: detail.into(),
+            detail,
             lang: Lang::default(),
         }
     }
@@ -183,7 +183,7 @@ impl AppError {
             AppError::Unavailable { message, lang } => message.render(*lang),
             AppError::Internal(msg) => format!("内部错误: {}", msg),
             AppError::Compression { detail, lang } => Msg::CompressionFailed {
-                detail: detail.clone(),
+                detail: detail.render(*lang),
             }
             .render(*lang),
             AppError::Config(msg) => format!("配置错误: {}", msg),
@@ -237,9 +237,15 @@ impl From<config::ConfigError> for AppError {
     }
 }
 
+impl From<CompressionDetail> for AppError {
+    fn from(detail: CompressionDetail) -> Self {
+        AppError::compression(detail)
+    }
+}
+
 impl From<image::ImageError> for AppError {
     fn from(err: image::ImageError) -> Self {
-        AppError::compression(format!("图片处理错误: {}", err))
+        AppError::compression(compression::image_process(err))
     }
 }
 
@@ -298,9 +304,30 @@ mod tests {
             .message();
         assert_eq!(internal, "内部错误: 数据库错误: boom");
 
-        let compression = AppError::compression("GIF 编码失败: boom")
-            .with_lang(Lang::En)
-            .message();
-        assert_eq!(compression, "Compression failed: GIF 编码失败: boom");
+        let zh_compression = AppError::compression(compression::gif_encode("boom")).message();
+        assert_eq!(zh_compression, "压缩失败: GIF 编码失败: boom");
+
+        let en_compression = AppError::compression(compression::gif_quantize(
+            compression::quantize_palette_mismatch(),
+        ))
+        .with_lang(Lang::En)
+        .message();
+        assert_eq!(
+            en_compression,
+            "Compression failed: GIF quantization failed: Frames produced inconsistent palettes"
+        );
+
+        let nested = AppError::compression(compression::png_encode(compression::png_smart_encode(
+            "unexpected end of file",
+        )))
+        .with_lang(Lang::En)
+        .message();
+        assert_eq!(
+            nested,
+            "Compression failed: PNG encoding failed: PNG encoding failed: unexpected end of file"
+        );
+        assert!(!nested
+            .chars()
+            .any(|c| matches!(c, '\u{3000}'..='\u{303f}' | '\u{4e00}'..='\u{9fff}' | '\u{ff00}'..='\u{ffef}')));
     }
 }

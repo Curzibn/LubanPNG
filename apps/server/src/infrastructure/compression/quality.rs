@@ -1,12 +1,15 @@
-use anyhow::Result;
+use crate::i18n::{compression, CompressionDetail};
 use image::RgbImage;
 use image_compare::rgb_hybrid_compare;
 
-pub fn calculate_ssim(original: &RgbImage, compressed: &RgbImage) -> Result<f64> {
+pub fn calculate_ssim(
+    original: &RgbImage,
+    compressed: &RgbImage,
+) -> Result<f64, CompressionDetail> {
     if original.width() != compressed.width() || original.height() != compressed.height() {
-        return Err(anyhow::anyhow!("图像尺寸不匹配"));
+        return Err(compression::ssim_size_mismatch());
     }
-    let similarity = rgb_hybrid_compare(original, compressed)?;
+    let similarity = rgb_hybrid_compare(original, compressed).map_err(compression::text)?;
     Ok(similarity.score)
 }
 

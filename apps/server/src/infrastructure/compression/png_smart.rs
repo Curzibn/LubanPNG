@@ -1,6 +1,6 @@
 use crate::config::PngSmartConfig;
+use crate::i18n::{compression, CompressionDetail};
 use crate::infrastructure::compression::quantize::{expand_to_rgba, quantize_image};
-use anyhow::Result;
 use image::{ColorType, DynamicImage, ImageFormat};
 use std::io::Cursor;
 
@@ -17,14 +17,14 @@ pub fn should_use_imagequant(img: &DynamicImage, config: &PngSmartConfig) -> boo
     }
 }
 
-pub fn optimize_with_oxipng(png_data: &[u8], level: u8) -> Result<Vec<u8>> {
+pub fn optimize_with_oxipng(png_data: &[u8], level: u8) -> Result<Vec<u8>, CompressionDetail> {
     use oxipng::{optimize_from_memory, Options, StripChunks};
 
     let mut options = Options::from_preset(level.min(6));
     options.strip = StripChunks::Safe;
 
-    let optimized = optimize_from_memory(png_data, &options)
-        .map_err(|e| anyhow::anyhow!("OxiPNG优化失败: {}", e))?;
+    let optimized =
+        optimize_from_memory(png_data, &options).map_err(compression::oxipng_optimize)?;
 
     Ok(optimized)
 }
@@ -35,7 +35,7 @@ pub fn compress_png_smart(
     config: &PngSmartConfig,
     min_quality: u8,
     max_quality: u8,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>, CompressionDetail> {
     let mut data_to_optimize = original_data;
 
     if should_use_imagequant(&img, config) {
@@ -58,22 +58,27 @@ pub fn encode_png_smart(
     config: &PngSmartConfig,
     min_quality: u8,
     max_quality: u8,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>, CompressionDetail> {
     let mut baseline = Vec::new();
-    img.write_to(&mut Cursor::new(&mut baseline), ImageFormat::Png)?;
+    img.write_to(&mut Cursor::new(&mut baseline), ImageFormat::Png)
+        .map_err(compression::text)?;
     compress_png_smart(img, baseline, config, min_quality, max_quality)
 }
 
-fn try_imagequant(img: &DynamicImage, min_quality: u8, max_quality: u8) -> Result<Vec<u8>> {
+fn try_imagequant(
+    img: &DynamicImage,
+    min_quality: u8,
+    max_quality: u8,
+) -> Result<Vec<u8>, CompressionDetail> {
     let rgba = img.to_rgba8();
     let (palette, indices) = quantize_image(&rgba, min_quality, max_quality, 1.0)?;
     let quantized = expand_to_rgba(&palette, &indices, rgba.width(), rgba.height())
-        .ok_or_else(|| anyhow::anyhow!("创建图像失败"))?;
+        .ok_or_else(compression::image_create)?;
 
     let mut data = Vec::new();
     DynamicImage::ImageRgba8(quantized)
         .write_to(&mut Cursor::new(&mut data), ImageFormat::Png)
-        .map_err(|e| anyhow::anyhow!("PNG编码失败: {}", e))?;
+        .map_err(compression::png_smart_encode)?;
 
     Ok(data)
 }

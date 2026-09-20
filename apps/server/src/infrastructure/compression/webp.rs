@@ -1,6 +1,7 @@
 use crate::config::{AppConfig, WebpSmartConfig};
 use crate::domain::compression::CompressionResult;
 use crate::error::{AppError, AppResult};
+use crate::i18n::compression;
 use crate::infrastructure::compression::probe;
 use crate::infrastructure::compression::quality::meets_floor;
 use crate::infrastructure::compression::CompressionStrategy;
@@ -23,7 +24,7 @@ impl CompressionStrategy for WebpCompressionStrategy {
 
 fn lossy_config(quality: u8, method: u8) -> AppResult<::webp::WebPConfig> {
     let mut config = ::webp::WebPConfig::new()
-        .map_err(|_| AppError::compression("初始化 WebP 编码配置失败"))?;
+        .map_err(|_| AppError::compression(compression::webp_config_init()))?;
     config.lossless = 0;
     config.quality = f32::from(quality.min(100));
     config.method = i32::from(method.min(6));
@@ -36,14 +37,16 @@ pub fn encode_webp_lossy(image: &RgbaImage, quality: u8, method: u8) -> AppResul
     let config = lossy_config(quality, method)?;
     let encoded = ::webp::Encoder::from_rgba(image.as_raw(), image.width(), image.height())
         .encode_advanced(&config)
-        .map_err(|e| AppError::compression(format!("WebP 编码失败: {:?}", e)))?;
+        .map_err(|e| AppError::compression(compression::webp_encode(format!("{:?}", e))))?;
     Ok(encoded.to_vec())
 }
 
 pub fn encode_webp_lossless(image: &RgbaImage) -> AppResult<Vec<u8>> {
     let encoded = ::webp::Encoder::from_rgba(image.as_raw(), image.width(), image.height())
         .encode_simple(true, 100.0)
-        .map_err(|e| AppError::compression(format!("WebP 无损编码失败: {:?}", e)))?;
+        .map_err(|e| {
+            AppError::compression(compression::webp_lossless_encode(format!("{:?}", e)))
+        })?;
     Ok(encoded.to_vec())
 }
 
@@ -77,13 +80,13 @@ fn compress_static_webp(input: &[u8], config: &WebpSmartConfig) -> AppResult<Vec
 fn compress_animated_webp(input: &[u8], config: &WebpSmartConfig) -> AppResult<Vec<u8>> {
     let decoded = ::webp::AnimDecoder::new(input)
         .decode()
-        .map_err(|e| AppError::compression(format!("解析动态 WebP 失败: {}", e)))?;
+        .map_err(|e| AppError::compression(compression::webp_animated_decode(e)))?;
     let mut frames: Vec<(Vec<u8>, i32)> = Vec::with_capacity(decoded.len());
     let (mut width, mut height) = (0u32, 0u32);
     for index in 0..decoded.len() {
         let frame = decoded
             .get_frame(index)
-            .ok_or_else(|| AppError::compression("读取动态 WebP 帧失败"))?;
+            .ok_or_else(|| AppError::compression(compression::webp_frame_read()))?;
         width = frame.width();
         height = frame.height();
         let pixels = match frame.get_layout() {
@@ -97,7 +100,7 @@ fn compress_animated_webp(input: &[u8], config: &WebpSmartConfig) -> AppResult<V
         frames.push((pixels, frame.get_time_ms()));
     }
     if frames.is_empty() {
-        return Err(AppError::compression("动态 WebP 没有帧"));
+        return Err(AppError::compression(compression::webp_no_frames()));
     }
     let encoder_config = lossy_config(config.quality, config.method)?;
     let mut encoder = ::webp::AnimEncoder::new(width, height, &encoder_config);
@@ -107,9 +110,9 @@ fn compress_animated_webp(input: &[u8], config: &WebpSmartConfig) -> AppResult<V
         start = *end;
     }
     encoder.set_loop_count(decoded.loop_count as i32);
-    let encoded = encoder
-        .try_encode()
-        .map_err(|e| AppError::compression(format!("动态 WebP 编码失败: {:?}", e)))?;
+    let encoded = encoder.try_encode().map_err(|e| {
+        AppError::compression(compression::webp_animated_encode(format!("{:?}", e)))
+    })?;
     Ok(encoded.to_vec())
 }
 

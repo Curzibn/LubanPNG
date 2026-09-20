@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use crate::i18n::{compression, CompressionDetail};
 use image::RgbaImage;
 use imagequant::{Attributes, Histogram, RGBA};
 
@@ -27,63 +27,63 @@ pub fn quantize_frames(
     dithering: f32,
     max_colors: u32,
     last_index_transparent: bool,
-) -> Result<Quantized> {
-    let first = frames.first().ok_or_else(|| anyhow!("没有可量化的帧"))?;
+) -> Result<Quantized, CompressionDetail> {
+    let first = frames.first().ok_or_else(compression::quantize_no_frames)?;
     let (width, height) = (first.width() as usize, first.height() as usize);
     if frames
         .iter()
         .any(|frame| frame.width() as usize != width || frame.height() as usize != height)
     {
-        return Err(anyhow!("各帧尺寸不一致"));
+        return Err(compression::quantize_size_mismatch());
     }
     let mut attributes = Attributes::new();
     attributes
         .set_quality(min_quality, max_quality)
-        .map_err(|e| anyhow!("设置质量失败: {}", e))?;
+        .map_err(compression::quantize_set_quality)?;
     attributes
         .set_max_colors(max_colors)
-        .map_err(|e| anyhow!("设置颜色数失败: {}", e))?;
+        .map_err(compression::quantize_set_colors)?;
     attributes.set_last_index_transparent(last_index_transparent);
     let pixels: Vec<Vec<RGBA>> = frames.iter().map(liq_pixels).collect();
 
     let mut result = if pixels.len() == 1 {
         let mut image = attributes
             .new_image_borrowed(&pixels[0], width, height, 0.0)
-            .map_err(|e| anyhow!("创建图像失败: {}", e))?;
+            .map_err(compression::quantize_create_image)?;
         attributes
             .quantize(&mut image)
-            .map_err(|e| anyhow!("量化失败: {}", e))?
+            .map_err(compression::quantize_run)?
     } else {
         let mut histogram = Histogram::new(&attributes);
         for frame in &pixels {
             let mut image = attributes
                 .new_image_borrowed(frame, width, height, 0.0)
-                .map_err(|e| anyhow!("创建图像失败: {}", e))?;
+                .map_err(compression::quantize_create_image)?;
             histogram
                 .add_image(&attributes, &mut image)
-                .map_err(|e| anyhow!("统计颜色失败: {}", e))?;
+                .map_err(compression::quantize_histogram)?;
         }
         histogram
             .quantize(&attributes)
-            .map_err(|e| anyhow!("量化失败: {}", e))?
+            .map_err(compression::quantize_run)?
     };
     result
         .set_dithering_level(dithering)
-        .map_err(|e| anyhow!("设置抖动失败: {}", e))?;
+        .map_err(compression::quantize_dithering)?;
 
     let mut palette: Option<Vec<RGBA>> = None;
     let mut remapped = Vec::with_capacity(pixels.len());
     for frame in &pixels {
         let mut image = attributes
             .new_image_borrowed(frame, width, height, 0.0)
-            .map_err(|e| anyhow!("创建图像失败: {}", e))?;
+            .map_err(compression::quantize_create_image)?;
         let (frame_palette, indices) = result
             .remapped(&mut image)
-            .map_err(|e| anyhow!("重映射失败: {}", e))?;
+            .map_err(compression::quantize_remap)?;
         match &palette {
             None => palette = Some(frame_palette),
             Some(existing) if *existing != frame_palette => {
-                return Err(anyhow!("多帧调色板不一致"));
+                return Err(compression::quantize_palette_mismatch());
             }
             Some(_) => {}
         }
@@ -100,7 +100,7 @@ pub fn quantize_image(
     min_quality: u8,
     max_quality: u8,
     dithering: f32,
-) -> Result<(Vec<RGBA>, Vec<u8>)> {
+) -> Result<(Vec<RGBA>, Vec<u8>), CompressionDetail> {
     let mut quantized = quantize_frames(
         std::slice::from_ref(image),
         min_quality,

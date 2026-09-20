@@ -1,6 +1,7 @@
 use crate::config::{AppConfig, JpegSmartConfig};
 use crate::domain::compression::CompressionResult;
 use crate::error::AppResult;
+use crate::i18n::compression;
 use crate::infrastructure::compression::jpeg_smart::{
     decide_compression_strategy, estimate_jpeg_quality,
 };
@@ -77,12 +78,11 @@ fn compress_jpeg_with_quality(
 
     match result {
         Ok(Ok(data)) => Ok(data),
-        Ok(Err(e)) => Err(crate::error::AppError::compression(format!(
-            "JPEG编码失败: {}",
-            e
-        ))),
+        Ok(Err(e)) => Err(crate::error::AppError::compression(
+            compression::jpeg_encode(e),
+        )),
         Err(_) => Err(crate::error::AppError::compression(
-            "JPEG编码过程中发生panic",
+            compression::jpeg_panic(),
         )),
     }
 }

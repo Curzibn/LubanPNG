@@ -245,6 +245,228 @@ impl Msg {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompressionDetail {
+    zh: &'static str,
+    en: &'static str,
+    source: CompressionSource,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum CompressionSource {
+    None,
+    Text(String),
+    Nested(Box<CompressionDetail>),
+}
+
+impl CompressionDetail {
+    fn new(zh: &'static str, en: &'static str) -> Self {
+        Self {
+            zh,
+            en,
+            source: CompressionSource::None,
+        }
+    }
+
+    fn text(detail: impl std::fmt::Display) -> Self {
+        Self {
+            zh: "",
+            en: "",
+            source: CompressionSource::Text(detail.to_string()),
+        }
+    }
+
+    fn external(zh: &'static str, en: &'static str, detail: impl std::fmt::Display) -> Self {
+        Self::nested(zh, en, Self::text(detail))
+    }
+
+    fn nested(zh: &'static str, en: &'static str, source: CompressionDetail) -> Self {
+        Self {
+            zh,
+            en,
+            source: CompressionSource::Nested(Box::new(source)),
+        }
+    }
+
+    pub fn render(&self, lang: Lang) -> String {
+        match &self.source {
+            CompressionSource::Text(detail) => detail.clone(),
+            CompressionSource::None => match lang {
+                Lang::Zh => self.zh.to_string(),
+                Lang::En => self.en.to_string(),
+            },
+            CompressionSource::Nested(source) => match lang {
+                Lang::Zh => format!("{}: {}", self.zh, source.render(lang)),
+                Lang::En => format!("{}: {}", self.en, source.render(lang)),
+            },
+        }
+    }
+}
+
+pub mod compression {
+    use super::CompressionDetail;
+
+    pub fn text(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::text(detail)
+    }
+
+    pub fn image_process(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::external("图片处理错误", "Image processing failed", detail)
+    }
+
+    pub fn unsupported_format(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::external("不支持的图片格式", "Unsupported image format", detail)
+    }
+
+    pub fn task_execution(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::external("任务执行失败", "Task execution failed", detail)
+    }
+
+    pub fn runtime_handle() -> CompressionDetail {
+        CompressionDetail::new(
+            "无法获取运行时句柄",
+            "Failed to get the async runtime handle",
+        )
+    }
+
+    pub fn webp_config_init() -> CompressionDetail {
+        CompressionDetail::new(
+            "初始化 WebP 编码配置失败",
+            "Failed to initialize the WebP encoder configuration",
+        )
+    }
+
+    pub fn webp_encode(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::external("WebP 编码失败", "WebP encoding failed", detail)
+    }
+
+    pub fn webp_lossless_encode(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::external("WebP 无损编码失败", "WebP lossless encoding failed", detail)
+    }
+
+    pub fn webp_animated_decode(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::external(
+            "解析动态 WebP 失败",
+            "Failed to decode the animated WebP",
+            detail,
+        )
+    }
+
+    pub fn webp_frame_read() -> CompressionDetail {
+        CompressionDetail::new(
+            "读取动态 WebP 帧失败",
+            "Failed to read an animated WebP frame",
+        )
+    }
+
+    pub fn webp_no_frames() -> CompressionDetail {
+        CompressionDetail::new("动态 WebP 没有帧", "The animated WebP contains no frames")
+    }
+
+    pub fn webp_animated_encode(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::external(
+            "动态 WebP 编码失败",
+            "Animated WebP encoding failed",
+            detail,
+        )
+    }
+
+    pub fn apng_encode(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::external("APNG 编码失败", "APNG encoding failed", detail)
+    }
+
+    pub fn gif_encode(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::external("GIF 编码失败", "GIF encoding failed", detail)
+    }
+
+    pub fn gif_no_frames() -> CompressionDetail {
+        CompressionDetail::new("GIF 没有可用的帧", "The GIF contains no usable frames")
+    }
+
+    pub fn gif_too_large() -> CompressionDetail {
+        CompressionDetail::new(
+            "GIF 尺寸超出格式上限",
+            "The GIF exceeds the format's size limit",
+        )
+    }
+
+    pub fn gif_quantize(source: CompressionDetail) -> CompressionDetail {
+        CompressionDetail::nested("GIF 量化失败", "GIF quantization failed", source)
+    }
+
+    pub fn png_encode(source: CompressionDetail) -> CompressionDetail {
+        CompressionDetail::nested("PNG 编码失败", "PNG encoding failed", source)
+    }
+
+    pub fn png_smart_encode(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::external("PNG编码失败", "PNG encoding failed", detail)
+    }
+
+    pub fn jpeg_encode(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::external("JPEG编码失败", "JPEG encoding failed", detail)
+    }
+
+    pub fn jpeg_panic() -> CompressionDetail {
+        CompressionDetail::new("JPEG编码过程中发生panic", "JPEG encoding panicked")
+    }
+
+    pub fn oxipng_optimize(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::external("OxiPNG优化失败", "OxiPNG optimization failed", detail)
+    }
+
+    pub fn image_create() -> CompressionDetail {
+        CompressionDetail::new("创建图像失败", "Failed to create the image")
+    }
+
+    pub fn ssim_size_mismatch() -> CompressionDetail {
+        CompressionDetail::new("图像尺寸不匹配", "Image dimensions do not match")
+    }
+
+    pub fn quantize_no_frames() -> CompressionDetail {
+        CompressionDetail::new("没有可量化的帧", "No frames to quantize")
+    }
+
+    pub fn quantize_size_mismatch() -> CompressionDetail {
+        CompressionDetail::new("各帧尺寸不一致", "Frame sizes do not match")
+    }
+
+    pub fn quantize_set_quality(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::external("设置质量失败", "Failed to set the quality range", detail)
+    }
+
+    pub fn quantize_set_colors(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::external("设置颜色数失败", "Failed to set the colour count", detail)
+    }
+
+    pub fn quantize_create_image(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::external("创建图像失败", "Failed to create the image", detail)
+    }
+
+    pub fn quantize_run(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::external("量化失败", "Quantization failed", detail)
+    }
+
+    pub fn quantize_histogram(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::external(
+            "统计颜色失败",
+            "Failed to build the colour histogram",
+            detail,
+        )
+    }
+
+    pub fn quantize_dithering(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::external("设置抖动失败", "Failed to set the dithering level", detail)
+    }
+
+    pub fn quantize_remap(detail: impl std::fmt::Display) -> CompressionDetail {
+        CompressionDetail::external("重映射失败", "Failed to remap the image", detail)
+    }
+
+    pub fn quantize_palette_mismatch() -> CompressionDetail {
+        CompressionDetail::new("多帧调色板不一致", "Frames produced inconsistent palettes")
+    }
+}
+
 pub struct LoginCodeEmail {
     pub subject: String,
     pub body: String,
@@ -347,6 +569,87 @@ mod tests {
         assert!(Msg::KeyLimitReached { max: 1 }
             .render(Lang::En)
             .contains("at most 1 active API key"));
+    }
+
+    fn has_cjk(value: &str) -> bool {
+        value.chars().any(|c| {
+            matches!(
+                c,
+                '\u{3000}'..='\u{303f}' | '\u{4e00}'..='\u{9fff}' | '\u{ff00}'..='\u{ffef}'
+            )
+        })
+    }
+
+    #[test]
+    fn compression_details_keep_chinese_wording() {
+        let detail = compression::gif_quantize(compression::quantize_palette_mismatch());
+        assert_eq!(detail.render(Lang::Zh), "GIF 量化失败: 多帧调色板不一致");
+        assert_eq!(
+            detail.render(Lang::En),
+            "GIF quantization failed: Frames produced inconsistent palettes"
+        );
+
+        let nested = compression::png_encode(compression::png_smart_encode("boom"));
+        assert_eq!(nested.render(Lang::Zh), "PNG 编码失败: PNG编码失败: boom");
+        assert_eq!(
+            nested.render(Lang::En),
+            "PNG encoding failed: PNG encoding failed: boom"
+        );
+
+        let external = compression::quantize_set_quality("bad range");
+        assert_eq!(external.render(Lang::Zh), "设置质量失败: bad range");
+        assert_eq!(
+            external.render(Lang::En),
+            "Failed to set the quality range: bad range"
+        );
+
+        let raw = compression::text("unexpected end of file");
+        assert_eq!(raw.render(Lang::Zh), "unexpected end of file");
+        assert_eq!(raw.render(Lang::En), "unexpected end of file");
+    }
+
+    #[test]
+    fn english_compression_details_have_no_chinese_residue() {
+        let details = [
+            compression::image_process("decode error"),
+            compression::unsupported_format("Rgb8"),
+            compression::task_execution("task panicked"),
+            compression::runtime_handle(),
+            compression::webp_config_init(),
+            compression::webp_encode("error"),
+            compression::webp_lossless_encode("error"),
+            compression::webp_animated_decode("error"),
+            compression::webp_frame_read(),
+            compression::webp_no_frames(),
+            compression::webp_animated_encode("error"),
+            compression::apng_encode("error"),
+            compression::gif_encode("error"),
+            compression::gif_no_frames(),
+            compression::gif_too_large(),
+            compression::gif_quantize(compression::quantize_histogram("error")),
+            compression::png_encode(compression::png_smart_encode("error")),
+            compression::jpeg_encode("error"),
+            compression::jpeg_panic(),
+            compression::oxipng_optimize("error"),
+            compression::image_create(),
+            compression::ssim_size_mismatch(),
+            compression::quantize_no_frames(),
+            compression::quantize_size_mismatch(),
+            compression::quantize_set_quality("error"),
+            compression::quantize_set_colors("error"),
+            compression::quantize_create_image("error"),
+            compression::quantize_run("error"),
+            compression::quantize_dithering("error"),
+            compression::quantize_remap("error"),
+            compression::quantize_palette_mismatch(),
+        ];
+        for detail in details {
+            let rendered = detail.render(Lang::En);
+            assert!(
+                !has_cjk(&rendered),
+                "English detail contains CJK: {rendered}"
+            );
+        }
     }
 
     #[test]

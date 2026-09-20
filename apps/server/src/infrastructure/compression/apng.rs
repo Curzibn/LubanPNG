@@ -1,5 +1,6 @@
 use crate::config::AppConfig;
 use crate::error::{AppError, AppResult};
+use crate::i18n::compression;
 use crate::infrastructure::compression::png_smart::optimize_with_oxipng;
 use crate::infrastructure::compression::probe;
 use crate::infrastructure::compression::quantize::{quantize_frames, Quantized};
@@ -13,7 +14,7 @@ pub fn frame_delay_millis(frame: &Frame) -> f64 {
 }
 
 fn png_error(err: ::png::EncodingError) -> AppError {
-    AppError::compression(format!("APNG 编码失败: {}", err))
+    AppError::compression(compression::apng_encode(err))
 }
 
 pub fn compress_apng(input: &[u8], config: &AppConfig) -> AppResult<Vec<u8>> {

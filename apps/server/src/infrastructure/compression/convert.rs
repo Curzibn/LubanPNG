@@ -1,7 +1,7 @@
 use crate::config::AppConfig;
 use crate::domain::compression::{Background, CompressionResult, ConversionRequest, OutputFormat};
 use crate::error::{AppError, AppResult};
-use crate::i18n::{Lang, Msg};
+use crate::i18n::{compression, Lang, Msg};
 use crate::infrastructure::compression::avif::encode_avif_smart;
 use crate::infrastructure::compression::jpeg::encode_jpeg_smart;
 use crate::infrastructure::compression::jpeg_smart::decide_compression_strategy;
@@ -68,7 +68,7 @@ pub fn convert_image(
             config.imagequant.min_quality,
             config.imagequant.max_quality,
         )
-        .map_err(|e| AppError::compression(format!("PNG 编码失败: {}", e)))?,
+        .map_err(|e| AppError::compression(compression::png_encode(e)))?,
         OutputFormat::WebP => encode_webp_smart(&decoded.to_rgba8(), &config.webp_smart)?,
         OutputFormat::Avif => encode_avif_smart(&decoded.to_rgba8(), &config.avif_smart)?,
     };

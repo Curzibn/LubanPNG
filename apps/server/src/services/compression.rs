@@ -3,7 +3,7 @@ use crate::domain::compression::ConversionRequest;
 use crate::domain::subject::{Plan, Subject, SubjectKind};
 use crate::domain::task::{TaskRecord, TaskStatus};
 use crate::error::{AppError, AppResult};
-use crate::i18n::{Lang, Msg};
+use crate::i18n::{compression, Lang, Msg};
 use crate::infrastructure::compression::convert::convert_image;
 use crate::infrastructure::compression::probe;
 use crate::infrastructure::compression::CompressionStrategy;
@@ -122,10 +122,9 @@ impl CompressionService {
     }
 
     fn strategy(&self, format: ImageFormat) -> AppResult<Arc<dyn CompressionStrategy>> {
-        self.strategies
-            .get(&format)
-            .cloned()
-            .ok_or_else(|| AppError::compression(format!("不支持的图片格式: {:?}", format)))
+        self.strategies.get(&format).cloned().ok_or_else(|| {
+            AppError::compression(compression::unsupported_format(format!("{:?}", format)))
+        })
     }
 
     pub async fn submit(
@@ -340,11 +339,11 @@ impl CompressionService {
         let result = tokio::task::spawn_blocking(move || match conversion {
             Some(request) => convert_image(&compression_input, format, request, &config),
             None => tokio::runtime::Handle::try_current()
-                .map_err(|_| AppError::compression("无法获取运行时句柄"))?
+                .map_err(|_| AppError::compression(compression::runtime_handle()))?
                 .block_on(strategy.compress(&compression_input, &config)),
         })
         .await
-        .map_err(|e| AppError::compression(format!("任务执行失败: {}", e)))??;
+        .map_err(|e| AppError::compression(compression::task_execution(e)))??;
 
         self.tasks.set_progress(task.id, 70).await?;
         let plan = self.plan_for_task(task).await?;
