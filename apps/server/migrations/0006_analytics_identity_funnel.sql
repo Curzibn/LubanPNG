@@ -59,7 +59,6 @@ FROM tasks
 LEFT JOIN analytics.visitor_keys AS keys
     ON keys.subject_type = tasks.subject_type AND keys.subject_id = tasks.subject_id;
 
--- uploaders/counted 为全来源口径（含 CLI、API 等无页面访问的主体）；attributed_uploaders 只统计上传日或之前有页面访问的主体，是漏斗里与 visitors 可比的一段；counted 为真正计次的产物。
 CREATE VIEW analytics.daily_funnel AS
 WITH days AS (
     SELECT day FROM analytics.identity_visits

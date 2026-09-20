@@ -1934,45 +1934,41 @@ fn funnel_uploaders_cover_every_source_while_attribution_stays_visit_bound() {
             .await
             .unwrap();
 
-        let (all_sources, web_only, attributed, visitors): (i64, i64, i64, i64) = sqlx::query_as(
-            "SELECT
-                 (SELECT count(DISTINCT visitor_id) FROM analytics.identity_tasks
-                  WHERE day = date(now() AT TIME ZONE 'Asia/Shanghai')),
-                 (SELECT count(DISTINCT visitor_id) FROM analytics.identity_tasks
-                  WHERE day = date(now() AT TIME ZONE 'Asia/Shanghai') AND source = 'web'),
-                 (SELECT count(DISTINCT t.visitor_id) FROM analytics.identity_tasks t
-                  WHERE t.day = date(now() AT TIME ZONE 'Asia/Shanghai')
-                    AND EXISTS (SELECT 1 FROM analytics.identity_visits v
-                                WHERE v.visitor_id = t.visitor_id AND v.day <= t.day)),
-                 (SELECT count(DISTINCT visitor_id) FROM analytics.identity_visits
-                  WHERE day = date(now() AT TIME ZONE 'Asia/Shanghai'))",
+        let checks: (i64, i64, i64, i64, i64) = sqlx::query_as(
+            "WITH view AS (
+                 SELECT visitors, uploaders, attributed_uploaders, counted
+                 FROM analytics.daily_funnel
+                 WHERE day = date(now() AT TIME ZONE 'Asia/Shanghai')
+             ),
+             expected AS (
+                 SELECT
+                     (SELECT count(DISTINCT visitor_id) FROM analytics.identity_visits
+                      WHERE day = date(now() AT TIME ZONE 'Asia/Shanghai')) AS visitors,
+                     (SELECT count(DISTINCT visitor_id) FROM analytics.identity_tasks
+                      WHERE day = date(now() AT TIME ZONE 'Asia/Shanghai')) AS uploaders,
+                     (SELECT count(DISTINCT t.visitor_id) FROM analytics.identity_tasks t
+                      WHERE t.day = date(now() AT TIME ZONE 'Asia/Shanghai')
+                        AND EXISTS (SELECT 1 FROM analytics.identity_visits v
+                                    WHERE v.visitor_id = t.visitor_id AND v.day <= t.day)) AS attributed,
+                     (SELECT count(DISTINCT visitor_id) FROM analytics.identity_tasks
+                      WHERE day = date(now() AT TIME ZONE 'Asia/Shanghai') AND source = 'web') AS web_only
+             )
+             SELECT
+                 (CASE WHEN view.visitors IS DISTINCT FROM expected.visitors THEN 1 ELSE 0 END)::bigint,
+                 (CASE WHEN view.uploaders IS DISTINCT FROM expected.uploaders THEN 1 ELSE 0 END)::bigint,
+                 (CASE WHEN view.attributed_uploaders IS DISTINCT FROM expected.attributed THEN 1 ELSE 0 END)::bigint,
+                 (CASE WHEN expected.uploaders > expected.web_only THEN 1 ELSE 0 END)::bigint,
+                 (CASE WHEN view.attributed_uploaders <= view.uploaders THEN 1 ELSE 0 END)::bigint
+             FROM view, expected",
         )
         .fetch_one(&pool)
         .await
         .unwrap();
-
-        let (view_uploaders, view_attributed, view_visitors): (i64, i64, i64) = sqlx::query_as(
-            "SELECT uploaders, attributed_uploaders, visitors FROM analytics.daily_funnel
-             WHERE day = date(now() AT TIME ZONE 'Asia/Shanghai')",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-
         assert_eq!(
-            view_uploaders, all_sources,
-            "uploaders is the all-source count"
+            checks,
+            (0, 0, 0, 1, 1),
+            "view vs recomputation: (visitors,uploaders,attributed,all>web,attr<=uploaders)"
         );
-        assert_eq!(
-            view_attributed, attributed,
-            "attribution needs a prior visit"
-        );
-        assert_eq!(view_visitors, visitors);
-        assert!(
-            all_sources > web_only,
-            "the API-only subject must push the all-source count past web-only"
-        );
-        assert!(view_attributed <= view_visitors);
 
         let prior_visits: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM analytics.identity_visits v
@@ -2007,15 +2003,12 @@ fn traffic_channels_keep_the_earliest_touch_within_a_day() {
 
         let pool = db::connect(&test_config().database).await.unwrap();
         let tagged_channel = format!("utm:{tagged}");
-        let (view_visitors, view_day): (i64, chrono::NaiveDate) = sqlx::query_as(
-            "SELECT visitors, first_day FROM analytics.traffic_channels WHERE channel = $1",
-        )
-        .bind(&tagged_channel)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-
-        let (expected_visitors, expected_day): (i64, chrono::NaiveDate) = sqlx::query_as(
+        let (view_visitors, view_day, expected_visitors, expected_day): (
+            i64,
+            chrono::NaiveDate,
+            i64,
+            chrono::NaiveDate,
+        ) = sqlx::query_as(
             "WITH earliest AS (
                  SELECT DISTINCT ON (visits.subject_id)
                      visits.subject_id,
@@ -2024,9 +2017,14 @@ fn traffic_channels_keep_the_earliest_touch_within_a_day() {
                           ELSE 'direct' END AS channel
                  FROM visits
                  ORDER BY visits.subject_id, visits.occurred_at, visits.id
+             ),
+             recomputed AS (
+                 SELECT count(*)::bigint AS visitors, min(day) AS first_day
+                 FROM earliest WHERE channel = $1
              )
-             SELECT count(*)::bigint, min(day)
-             FROM earliest WHERE channel = $1",
+             SELECT view.visitors, view.first_day, recomputed.visitors, recomputed.first_day
+             FROM analytics.traffic_channels AS view, recomputed
+             WHERE view.channel = $1",
         )
         .bind(&tagged_channel)
         .fetch_one(&pool)
