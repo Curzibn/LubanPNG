@@ -1911,9 +1911,10 @@ fn traffic_channels_attribute_first_touch_to_the_merged_visitor() {
     run(async {
         let app = test_app().await;
         app.get("/v1/me").await;
+        let channel = format!("launch-{}", uuid::Uuid::new_v4().simple());
         app.post_json(
             "/v1/events/visit",
-            serde_json::json!({ "path": "/", "utm_source": "launch", "utm_medium": "post" }),
+            serde_json::json!({ "path": "/", "utm_source": channel, "utm_medium": "post" }),
         )
         .await;
         let png = gradient_png(64, 64);
@@ -1929,17 +1930,18 @@ fn traffic_channels_attribute_first_touch_to_the_merged_visitor() {
             .await
             .unwrap();
 
+        let tagged = format!("utm:{}", channel);
         let channels: Vec<(String, i64, i64, i64)> = sqlx::query_as(
             "SELECT channel, visitors, uploaders, registrations FROM analytics.traffic_channels
-             WHERE first_day = date(now() AT TIME ZONE 'Asia/Shanghai')",
+             WHERE first_day = date(now() AT TIME ZONE 'Asia/Shanghai') AND channel = $1",
         )
+        .bind(&tagged)
         .fetch_all(&pool)
         .await
         .unwrap();
         let launch = channels
-            .iter()
-            .find(|(channel, ..)| channel == "utm:launch")
-            .unwrap_or_else(|| panic!("utm:launch missing from {channels:?}"));
+            .first()
+            .unwrap_or_else(|| panic!("{tagged} missing from this run's channels"));
         assert_eq!(launch.1, 1, "one visitor on the channel");
         assert_eq!(launch.2, 1, "the merged uploader counts on the channel");
         assert_eq!(launch.3, 1, "the registration counts on the channel");
