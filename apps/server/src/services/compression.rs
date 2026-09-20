@@ -235,11 +235,8 @@ impl CompressionService {
             },
             target_format: task.target_format.clone(),
             output_format: task.output_format().map(str::to_string),
-            quota_units: task.quota_units(),
-            no_gain: task.conversion().is_none()
-                && task
-                    .compressed_size
-                    .is_some_and(|size| size == task.original_size),
+            quota_units: task.billed_units(),
+            no_gain: task.no_gain(),
             error_msg: task.error_msg.clone(),
             created_at: task.created_at.timestamp(),
             completed_at: task.completed_at.map(|t| t.timestamp()),
@@ -350,15 +347,13 @@ impl CompressionService {
         let original_size = task.original_size.max(0);
         let compressed_size = result.data.len() as i64;
         let keep_original = conversion.is_none() && compressed_size >= original_size;
-        let (payload, stored_size, extension) = if keep_original {
-            (input, original_size, format_extension(format))
+        let (payload, stored_size, output_format) = if keep_original {
+            (input, original_size, format)
         } else {
-            (
-                Bytes::from(result.data),
-                compressed_size,
-                format_extension(result.format),
-            )
+            (Bytes::from(result.data), compressed_size, result.format)
         };
+        let billed = stored_size < original_size;
+        let extension = format_extension(output_format);
         let output_key = format!("{}/{}{}", plan.output_prefix(), task.id, extension);
         self.storage
             .put(
@@ -372,9 +367,9 @@ impl CompressionService {
         self.tasks
             .complete(task.id, stored_size, &output_key, expires_at)
             .await?;
-        if keep_original {
+        if billed {
             self.quota
-                .refund(
+                .settle(
                     &task.subject_type,
                     task.subject_id,
                     &task.quota_period,
@@ -384,7 +379,7 @@ impl CompressionService {
                 .await?;
         } else {
             self.quota
-                .settle(
+                .refund(
                     &task.subject_type,
                     task.subject_id,
                     &task.quota_period,

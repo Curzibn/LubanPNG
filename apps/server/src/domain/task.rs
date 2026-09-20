@@ -87,6 +87,24 @@ impl TaskRecord {
         Some(ConversionRequest { target, background })
     }
 
+    pub fn no_gain(&self) -> bool {
+        match self.status() {
+            TaskStatus::Failed => true,
+            TaskStatus::Completed => self
+                .compressed_size
+                .is_some_and(|size| size >= self.original_size),
+            TaskStatus::Pending | TaskStatus::Processing => false,
+        }
+    }
+
+    pub fn billed_units(&self) -> i32 {
+        if self.no_gain() {
+            0
+        } else {
+            self.quota_units()
+        }
+    }
+
     pub fn output_format(&self) -> Option<&'static str> {
         let key = self.output_key.as_ref()?;
         match key.rsplit_once('.')?.1 {

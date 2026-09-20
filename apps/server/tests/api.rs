@@ -604,6 +604,42 @@ fn transparent_png(w: u32, h: u32) -> Vec<u8> {
     buf
 }
 
+fn two_tone_png(w: u32, h: u32, cell: u32) -> Vec<u8> {
+    let mut img = image::RgbaImage::new(w, h);
+    for (x, y, pixel) in img.enumerate_pixels_mut() {
+        let light = ((x / cell) + (y / cell)) % 2 == 0;
+        let value = if light { 255u8 } else { 0u8 };
+        *pixel = image::Rgba([value, value, value, 255]);
+    }
+    let mut buf = Vec::new();
+    image::DynamicImage::ImageRgba8(img)
+        .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+        .unwrap();
+    buf
+}
+
+fn converted_size(source: &[u8], target: &str) -> usize {
+    let target = lubanpng::domain::compression::OutputFormat::parse(target).unwrap();
+    lubanpng::infrastructure::compression::convert::convert_image(
+        source,
+        image::ImageFormat::Png,
+        lubanpng::domain::compression::ConversionRequest {
+            target,
+            background: None,
+        },
+        &test_config(),
+    )
+    .unwrap()
+    .data
+    .len()
+}
+
+fn pad_to(mut data: Vec<u8>, total: usize) -> Vec<u8> {
+    assert!(data.len() <= total, "fixture already exceeds {total} bytes");
+    data.resize(total, 0);
+    data
+}
+
 fn animated_gif(frames: u32) -> Vec<u8> {
     use image::codecs::gif::{GifEncoder, Repeat};
     let mut out = Vec::new();
@@ -1899,6 +1935,7 @@ fn converting_png_to_webp_costs_two_units() {
         assert_eq!(data["status"], "completed", "{}", data);
         assert_eq!(data["target_format"], "webp");
         assert_eq!(data["output_format"], "webp");
+        assert_eq!(data["no_gain"], false, "{}", data);
         assert_eq!(data["quota_units"], 2);
         let url = data["compressed_url"].as_str().unwrap();
         assert_eq!(url, &format!("/v1/images/download/{}.webp", task_id));
@@ -1924,11 +1961,191 @@ fn converting_to_the_same_format_counts_once() {
             .await;
         let data = app.wait_final(&task_id).await;
         assert_eq!(data["status"], "completed", "{}", data);
+        assert_eq!(data["no_gain"], false, "{}", data);
         assert_eq!(data["quota_units"], 1);
         assert!(data["target_format"].is_null());
         assert!(data["compressed_url"].as_str().unwrap().ends_with(".png"));
         let me = app.get("/v1/me").await.json()["data"].clone();
         assert_eq!(me["quota"]["used"], 1);
+    });
+}
+
+#[test]
+fn conversion_that_grows_the_artifact_refunds_both_units() {
+    run(async {
+        let app = test_app().await;
+        let png = two_tone_png(8, 8, 8);
+        let produced = converted_size(&png, "jpeg");
+        assert!(
+            produced > png.len(),
+            "fixture must grow: png {} -> jpeg {}",
+            png.len(),
+            produced
+        );
+
+        let task_id = app
+            .upload_with_ok("swatch.png", &png, &[("convert", "jpeg")])
+            .await;
+        let data = app.wait_final(&task_id).await;
+        assert_eq!(data["status"], "completed", "{}", data);
+        assert_eq!(data["target_format"], "jpeg");
+        assert_eq!(data["output_format"], "jpeg");
+        assert_eq!(data["no_gain"], true, "{}", data);
+        assert_eq!(data["quota_units"], 0, "{}", data);
+        assert_eq!(data["compressed_size"].as_u64().unwrap(), produced as u64);
+        assert_eq!(data["downloadable"], true, "{}", data);
+        assert!(data["compressed_url"].as_str().unwrap().ends_with(".jpg"));
+
+        let stored = app
+            .storage
+            .get(&format!("outputs/free/{}.jpg", task_id))
+            .await
+            .unwrap();
+        assert_eq!(stored.len(), produced);
+        assert_eq!(&stored[..2], &[0xFF, 0xD8]);
+
+        let me = app.get("/v1/me").await.json()["data"].clone();
+        assert_eq!(me["quota"]["used"], 0);
+        assert_eq!(me["quota"]["remaining"], 5);
+
+        let pool = db::connect(&test_config().database).await.unwrap();
+        let ledger: (i64, i64, i64) = sqlx::query_as(
+            "SELECT count(*) FILTER (WHERE kind = 'reserve'),
+                    count(*) FILTER (WHERE kind = 'refund'),
+                    count(*) FILTER (WHERE kind = 'settle')
+             FROM quota_ledger WHERE task_id = $1",
+        )
+        .bind(uuid::Uuid::parse_str(&task_id).unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(ledger, (1, 1, 0));
+    });
+}
+
+#[test]
+fn conversion_that_keeps_the_same_size_refunds_both_units() {
+    run(async {
+        let app = test_app().await;
+        let base = two_tone_png(8, 8, 8);
+        let produced = converted_size(&base, "jpeg");
+        let png = pad_to(base, produced);
+        assert_eq!(png.len(), produced);
+
+        let task_id = app
+            .upload_with_ok("equal.png", &png, &[("convert", "jpeg")])
+            .await;
+        let data = app.wait_final(&task_id).await;
+        assert_eq!(data["status"], "completed", "{}", data);
+        assert_eq!(data["no_gain"], true, "{}", data);
+        assert_eq!(data["quota_units"], 0, "{}", data);
+        assert_eq!(data["original_size"].as_u64().unwrap(), produced as u64);
+        assert_eq!(data["compressed_size"].as_u64().unwrap(), produced as u64);
+        assert!(data["compressed_url"].as_str().unwrap().ends_with(".jpg"));
+
+        let me = app.get("/v1/me").await.json()["data"].clone();
+        assert_eq!(me["quota"]["used"], 0);
+        assert_eq!(me["quota"]["remaining"], 5);
+    });
+}
+
+#[test]
+fn conversion_that_shrinks_the_artifact_charges_both_units() {
+    run(async {
+        let app = test_app().await;
+        let png = gradient_png(96, 96);
+        let produced = converted_size(&png, "jpeg");
+        assert!(
+            produced < png.len(),
+            "fixture must shrink: png {} -> jpeg {}",
+            png.len(),
+            produced
+        );
+
+        let task_id = app
+            .upload_with_ok("photo.png", &png, &[("convert", "jpeg")])
+            .await;
+        let data = app.wait_final(&task_id).await;
+        assert_eq!(data["status"], "completed", "{}", data);
+        assert_eq!(data["no_gain"], false, "{}", data);
+        assert_eq!(data["quota_units"], 2, "{}", data);
+        assert_eq!(data["compressed_size"].as_u64().unwrap(), produced as u64);
+
+        let me = app.get("/v1/me").await.json()["data"].clone();
+        assert_eq!(me["quota"]["used"], 2);
+        assert_eq!(me["quota"]["remaining"], 3);
+    });
+}
+
+#[test]
+fn terminal_quota_units_match_the_ledger_reserve_and_refund_net() {
+    run(async {
+        let app = test_app().await;
+        let pool = db::connect(&test_config().database).await.unwrap();
+
+        let shrinking = gradient_png(96, 96);
+        let growing = two_tone_png(8, 8, 8);
+
+        let billed_id = app
+            .upload_with_ok("billed.png", &shrinking, &[("convert", "jpeg")])
+            .await;
+        let billed = app.wait_final(&billed_id).await;
+        assert_eq!(billed["quota_units"], 2, "{}", billed);
+
+        let no_gain_id = app
+            .upload_with_ok("grown.png", &growing, &[("convert", "jpeg")])
+            .await;
+        let no_gain = app.wait_final(&no_gain_id).await;
+        assert_eq!(no_gain["no_gain"], true, "{}", no_gain);
+        assert_eq!(no_gain["quota_units"], 0, "{}", no_gain);
+
+        let plain_no_gain = gradient_jpeg(64, 64, 25);
+        let plain_id = app.upload_ok("plain.jpg", &plain_no_gain, None).await;
+        let plain = app.wait_final(&plain_id).await;
+        assert_eq!(plain["no_gain"], true, "{}", plain);
+        assert_eq!(plain["quota_units"], 0, "{}", plain);
+
+        let failed_id = app
+            .upload_with_ok(
+                "cutout.png",
+                &transparent_png(64, 64),
+                &[("convert", "jpeg")],
+            )
+            .await;
+        let failed = app.wait_final(&failed_id).await;
+        assert_eq!(failed["status"], "failed", "{}", failed);
+        assert_eq!(failed["quota_units"], 0, "{}", failed);
+
+        let views = app.get("/v1/me/tasks").await.json()["data"].clone();
+        let view_total: i64 = views
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|view| matches!(view["status"].as_str(), Some("completed") | Some("failed")))
+            .map(|view| view["quota_units"].as_i64().unwrap())
+            .sum();
+
+        let device = device_id(&app);
+        let ledger_total: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(-sum(delta) FILTER (WHERE kind IN ('reserve', 'refund') AND task_id IS NOT NULL), 0)::bigint
+             FROM quota_ledger
+             WHERE subject_type = 'device' AND subject_id = $1",
+        )
+        .bind(device)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(view_total, ledger_total);
+
+        let balance_used: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(sum(used), 0)::bigint FROM quota_balances
+             WHERE subject_type = 'device' AND subject_id = $1",
+        )
+        .bind(device)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(view_total, balance_used);
     });
 }
 
@@ -1947,6 +2164,8 @@ fn transparent_png_to_jpeg_needs_background_and_refunds_both_units() {
             "{}",
             failed
         );
+        assert_eq!(failed["no_gain"], true, "{}", failed);
+        assert_eq!(failed["quota_units"], 0, "{}", failed);
         let me = app.get("/v1/me").await.json()["data"].clone();
         assert_eq!(me["quota"]["used"], 0);
         assert_eq!(me["quota"]["remaining"], 5);
@@ -1960,12 +2179,15 @@ fn transparent_png_to_jpeg_needs_background_and_refunds_both_units() {
             .await;
         let done = app.wait_final(&ok_id).await;
         assert_eq!(done["status"], "completed", "{}", done);
+        assert_eq!(done["no_gain"], true, "{}", done);
+        assert_eq!(done["quota_units"], 0, "{}", done);
         assert!(done["compressed_url"].as_str().unwrap().ends_with(".jpg"));
         let stored = app
             .storage
             .get(&format!("outputs/free/{}.jpg", ok_id))
             .await
             .unwrap();
+        assert!(stored.len() as u64 >= done["original_size"].as_u64().unwrap());
         let decoded = image::load_from_memory(&stored).unwrap().to_rgb8();
         let corner = decoded.get_pixel(0, 0);
         assert!(
@@ -1974,7 +2196,8 @@ fn transparent_png_to_jpeg_needs_background_and_refunds_both_units() {
             corner
         );
         let me = app.get("/v1/me").await.json()["data"].clone();
-        assert_eq!(me["quota"]["used"], 2);
+        assert_eq!(me["quota"]["used"], 0);
+        assert_eq!(me["quota"]["remaining"], 5);
     });
 }
 
@@ -2084,6 +2307,7 @@ fn no_gain_task_refunds_quota_while_compressing_task_settles() {
         let low_task = app.wait_final(&low_id).await;
         assert_eq!(low_task["status"], "completed", "{}", low_task);
         assert_eq!(low_task["no_gain"], true, "{}", low_task);
+        assert_eq!(low_task["quota_units"], 0, "{}", low_task);
         assert_eq!(
             low_task["compressed_size"].as_u64().unwrap(),
             low.len() as u64
@@ -2126,6 +2350,7 @@ fn no_gain_task_refunds_quota_while_compressing_task_settles() {
         let high_task = app.wait_final(&high_id).await;
         assert_eq!(high_task["status"], "completed", "{}", high_task);
         assert_eq!(high_task["no_gain"], false, "{}", high_task);
+        assert_eq!(high_task["quota_units"], 1, "{}", high_task);
         assert!(high_task["compressed_size"].as_u64().unwrap() < high.len() as u64);
 
         let after_high = app.get("/v1/me").await.json()["data"].clone();
