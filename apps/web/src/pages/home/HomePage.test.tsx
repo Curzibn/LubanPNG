@@ -93,4 +93,16 @@ describe("home quota guidance", () => {
     expect(html).toContain("1 run left today")
     expect(html).toContain("Sign in to keep going")
   })
+
+  it("warns a signed-in account as the month runs low without a waitlist pitch", () => {
+    const html = renderHome("/", meFor({ subject: "account", planId: "free", remaining: 2 }))
+    expect(html).toContain("本月还剩 2 次")
+    expect(html).not.toContain("加入等待名单")
+  })
+
+  it("renders the account warning in English with its singular form", () => {
+    const html = renderHome("/en/", meFor({ subject: "account", planId: "free", remaining: 1 }))
+    expect(html).toContain("1 run left this month")
+    expect(html).not.toContain("Join the waitlist")
+  })
 })

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { ogLocales, type OgLocaleCopy } from "./og-copy.ts"
 import { tokens } from "./tokens.ts"
 
 const packageDir = dirname(fileURLToPath(import.meta.url))
@@ -17,38 +18,7 @@ const space = (units: number): string => `${units * spacingUnit}px`
 
 const canvas = { width: 1200, height: 630 }
 
-type OgLocale = {
-  file: string
-  lang: string
-  mark: string
-  eyebrow: string
-  headline: string
-  lede: string
-  chips: string[]
-}
-
-const locales: OgLocale[] = [
-  {
-    file: "og.png",
-    lang: "zh-CN",
-    mark: "鲁",
-    eyebrow: "PNG · JPEG · GIF · WebP · AVIF 智能压缩",
-    headline: "把图片刨薄，也能放大 2×、4×。",
-    lede: "照片、截图与透明 PNG 收益最大；已经压过的图与多数动图空间有限，压不小不计次数。",
-    chips: ["网页", "API", "CLI"],
-  },
-  {
-    file: "og-en.png",
-    lang: "en",
-    mark: "L",
-    eyebrow: "PNG · JPEG · GIF · WebP · AVIF smart compression",
-    headline: "Shave image weight. Upscale 2× / 4×.",
-    lede: "Photos, screenshots and transparent PNGs save the most; already-optimized files and most animations have little headroom and are never charged.",
-    chips: ["Web", "API", "CLI"],
-  },
-]
-
-const html = (locale: OgLocale): string => `<!doctype html>
+const html = (locale: OgLocaleCopy): string => `<!doctype html>
 <html lang="${locale.lang}">
   <head>
     <meta charset="UTF-8" />
@@ -171,7 +141,7 @@ const html = (locale: OgLocale): string => `<!doctype html>
 
 const workDir = mkdtempSync(join(tmpdir(), "lubanpng-og-"))
 try {
-  for (const locale of locales) {
+  for (const locale of ogLocales) {
     const page = join(workDir, `${locale.lang}.html`)
     writeFileSync(page, html(locale))
     execFileSync(
