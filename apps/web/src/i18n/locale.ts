@@ -15,10 +15,12 @@ export const isEnglishPath = (pathname: string): boolean => pathname === "/en" |
 
 export const localeFromPath = (pathname: string): Locale => (isEnglishPath(pathname) ? "en" : DEFAULT_LOCALE)
 
+const collapseSlashes = (path: string): string => path.replace(/\/{2,}/g, "/")
+
 export const stripLocalePrefix = (pathname: string): string => {
   if (pathname === "/en") return "/"
-  if (pathname.startsWith("/en/")) return pathname.slice(3)
-  return pathname
+  if (pathname.startsWith("/en/")) return collapseSlashes(pathname.slice(3))
+  return collapseSlashes(pathname)
 }
 
 export const localizedPath = (pathname: string, locale: Locale): string => {

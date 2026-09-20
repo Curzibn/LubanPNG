@@ -64,6 +64,12 @@ describe("switchLocaleHref", () => {
     expect(switchLocaleHref("/login", "?next=%2Fdashboard", "", "en")).toBe("/en/login?next=%2Fen%2Fdashboard")
     expect(switchLocaleHref("/en/login", "?next=%2Fen%2Fdashboard", "", "zh-CN")).toBe("/login?next=%2Fdashboard")
   })
+
+  it("collapses repeated slashes so switcher hrefs stay site-internal", () => {
+    expect(stripLocalePrefix("/en//evil.com/")).toBe("/evil.com/")
+    expect(switchLocaleHref("/en//evil.com/", "", "", "zh-CN")).toBe("/evil.com/")
+    expect(switchLocaleHref("//evil.com/", "", "", "en")).toBe("/en/evil.com/")
+  })
 })
 
 describe("parseStoredLocale", () => {
