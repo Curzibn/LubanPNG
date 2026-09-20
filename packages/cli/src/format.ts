@@ -1,3 +1,5 @@
+import { translator, type Lang } from "./i18n/messages.js"
+
 const KIB = 1024
 const MIB = KIB * 1024
 const GIB = MIB * 1024
@@ -42,18 +44,20 @@ export const formatSavings = (percent: number): string => `-${percent}%`
 
 const SHANGHAI = "Asia/Shanghai"
 
-export const formatResetDate = (iso: string): string => {
+export const formatResetDate = (iso: string, lang: Lang): string => {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return ""
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const chinese = lang === "zh"
+  const parts = new Intl.DateTimeFormat(chinese ? "zh-CN" : "en-US", {
     timeZone: SHANGHAI,
-    month: "numeric",
+    month: chinese ? "numeric" : "short",
     day: "numeric",
   }).formatToParts(date)
   const month = parts.find((part) => part.type === "month")?.value ?? ""
   const day = parts.find((part) => part.type === "day")?.value ?? ""
   if (month === "" || day === "") return ""
-  return `${Number(month)} 月 ${Number(day)} 日`
+  return translator(lang)("format.resetDate", {
+    month: chinese ? Number(month) : month,
+    day: Number(day),
+  })
 }
-
-export const periodNoun = (period: string): string => (period === "day" ? "今日" : "本月")

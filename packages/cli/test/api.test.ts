@@ -32,13 +32,22 @@ describe("ApiClient", () => {
     expect(last?.headers.authorization).toBe("Bearer lp_test_key")
   })
 
+  it("sends Accept-Language for the resolved language", async () => {
+    const enClient = new ApiClient({ baseUrl: server.baseUrl, apiKey: "lp_test_key" })
+    await enClient.me()
+    expect(server.requests.at(-1)?.headers["accept-language"]).toBe("en")
+    const zhClient = new ApiClient({ baseUrl: server.baseUrl, apiKey: "lp_test_key", lang: "zh" })
+    await zhClient.me()
+    expect(server.requests.at(-1)?.headers["accept-language"]).toBe("zh-CN")
+  })
+
   it("maps unauthorized responses to code 4001", async () => {
     const client = new ApiClient({ baseUrl: server.baseUrl, apiKey: "lp_bad" })
     await expect(client.me()).rejects.toMatchObject({ code: 4001 })
     try {
       await client.me()
     } catch (error) {
-      expect(describeError(error)).toContain("API Key 无效")
+      expect(describeError(error, "zh")).toContain("API Key 无效")
     }
   })
 

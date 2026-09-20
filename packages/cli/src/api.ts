@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { basename } from "node:path"
 import { ApiError } from "./errors.js"
+import { DEFAULT_LANG, LANG_TAGS, translator, type Lang, type Translate } from "./i18n/messages.js"
 import { VERSION } from "./version.js"
 
 export const DEFAULT_API_BASE = "https://lubanpng.wizthink.cn"
@@ -110,11 +111,15 @@ export class ApiClient {
   private readonly baseUrl: string
   private readonly apiKey: string | null
   private readonly fetchImpl: typeof fetch
+  private readonly lang: Lang
+  private readonly t: Translate
 
-  constructor(options: { baseUrl: string; apiKey?: string | null; fetchImpl?: typeof fetch }) {
+  constructor(options: { baseUrl: string; apiKey?: string | null; fetchImpl?: typeof fetch; lang?: Lang }) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "")
     this.apiKey = options.apiKey && options.apiKey !== "" ? options.apiKey : null
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch
+    this.lang = options.lang ?? DEFAULT_LANG
+    this.t = translator(this.lang)
   }
 
   private url(path: string): string {
@@ -123,7 +128,11 @@ export class ApiClient {
   }
 
   private headers(json: boolean): Headers {
-    const headers = new Headers({ Accept: "application/json", "User-Agent": USER_AGENT })
+    const headers = new Headers({
+      Accept: "application/json",
+      "Accept-Language": LANG_TAGS[this.lang],
+      "User-Agent": USER_AGENT,
+    })
     if (this.apiKey) headers.set("Authorization", `Bearer ${this.apiKey}`)
     if (json) headers.set("Content-Type", "application/json")
     return headers
@@ -140,7 +149,7 @@ export class ApiClient {
       })
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") throw error
-      throw new ApiError(0, ErrorCode.network, "网络错误，无法连接 LubanPNG 服务")
+      throw new ApiError(0, ErrorCode.network, this.t("error.network"))
     }
     const text = await response.text()
     const quota = readQuotaHeaders((name) => response.headers.get(name))
@@ -148,10 +157,10 @@ export class ApiClient {
     try {
       parsed = text === "" ? null : JSON.parse(text)
     } catch {
-      throw new ApiError(response.status, ErrorCode.network, "服务返回了无法解析的响应")
+      throw new ApiError(response.status, ErrorCode.network, this.t("error.badResponse"))
     }
     if (!isEnvelope(parsed)) {
-      throw new ApiError(response.status, ErrorCode.network, "服务返回了无法解析的响应")
+      throw new ApiError(response.status, ErrorCode.network, this.t("error.badResponse"))
     }
     if (response.ok && parsed.code === 0) return { data: parsed.data as T, quota }
     throw new ApiError(response.status, parsed.code, parsed.msg)
@@ -192,7 +201,7 @@ export class ApiClient {
       })
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") throw error
-      throw new ApiError(0, ErrorCode.network, "下载产物失败，网络错误")
+      throw new ApiError(0, ErrorCode.network, this.t("error.downloadNetwork"))
     }
     if (!response.ok) {
       const text = await response.text()
@@ -202,20 +211,23 @@ export class ApiClient {
       } catch (error) {
         if (error instanceof ApiError) throw error
       }
-      throw new ApiError(response.status, ErrorCode.network, "下载产物失败")
+      throw new ApiError(response.status, ErrorCode.network, this.t("error.download"))
     }
     return new Uint8Array(await response.arrayBuffer())
   }
 }
 
-export const describeError = (error: unknown): string => {
+export const describeError = (error: unknown, lang: Lang = DEFAULT_LANG): string => {
+  const t = translator(lang)
   if (error instanceof ApiError) {
-    if (error.code === ErrorCode.unauthorized) return "API Key 无效或已吊销，请重新运行 lubanpng login"
-    if (error.code === ErrorCode.quotaExhausted) return `本期额度已用尽${error.message ? `：${error.message}` : ""}`
-    if (error.code === ErrorCode.notFound) return "任务或产物不存在、已过期"
+    if (error.code === ErrorCode.unauthorized) return t("error.unauthorized")
+    if (error.code === ErrorCode.quotaExhausted) {
+      return error.message !== "" ? t("error.quotaDetail", { detail: error.message }) : t("error.quota")
+    }
+    if (error.code === ErrorCode.notFound) return t("error.notFound")
     if (error.code === ErrorCode.network) return error.message
-    return error.message !== "" ? error.message : "请求失败"
+    return error.message !== "" ? error.message : t("error.request")
   }
   if (error instanceof Error && error.message !== "") return error.message
-  return "请求失败"
+  return t("error.request")
 }

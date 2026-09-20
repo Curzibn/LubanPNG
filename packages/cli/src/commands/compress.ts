@@ -8,14 +8,14 @@ import {
 } from "../api.js"
 import type { TargetFormat } from "../args.js"
 import { API_KEY_ENV, resolveApiKey } from "../config.js"
-import type { Context } from "../context.js"
+import { clientFor, type Context } from "../context.js"
 import { UsageError } from "../errors.js"
-import { formatBytes, formatSavings, formatSizePair, periodNoun, savingsPercent } from "../format.js"
-import { HEIC_EXTENSIONS, HEIC_IN_PLACE_MESSAGE, isHeicPath, prepareHeicUpload, type PreparedUpload } from "../heic.js"
+import { formatBytes, formatSavings, formatSizePair, savingsPercent } from "../format.js"
+import { heicInPlaceMessage, HEIC_EXTENSIONS, isHeicPath, prepareHeicUpload, type PreparedUpload } from "../heic.js"
+import { DEFAULT_LANG, translator, type Lang } from "../i18n/messages.js"
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ...HEIC_EXTENSIONS])
 const FORMAT_EXTENSIONS: Record<string, string> = { png: ".png", jpeg: ".jpg", gif: ".gif", webp: ".webp", avif: ".avif" }
-const SUPPORTED_FORMATS_LABEL = "PNG / JPEG / GIF / WebP / AVIF，macOS 上另支持 HEIC"
 const WAIT_SECONDS = 30
 const MAX_POLL_ROUNDS = 40
 const SIZE_COLUMN = 9
@@ -72,7 +72,12 @@ const walk = async (
   }
 }
 
-export const collectFiles = async (inputs: string[], recursive: boolean): Promise<Collected[]> => {
+export const collectFiles = async (
+  inputs: string[],
+  recursive: boolean,
+  lang: Lang = DEFAULT_LANG,
+): Promise<Collected[]> => {
+  const t = translator(lang)
   const collected: Collected[] = []
   const seen = new Set<string>()
   const push = (item: Collected): void => {
@@ -86,15 +91,15 @@ export const collectFiles = async (inputs: string[], recursive: boolean): Promis
     try {
       info = await stat(input)
     } catch {
-      throw new UsageError(`路径不存在：${input}`)
+      throw new UsageError(t("error.pathMissing", { path: input }))
     }
     if (info.isDirectory()) {
-      if (!recursive) throw new UsageError(`目录需要加 --recursive：${input}`)
+      if (!recursive) throw new UsageError(t("error.pathNeedsRecursive", { path: input }))
       await walk(input, input, push)
     } else if (info.isFile()) {
       push({ path: input, name: basename(input), relative: basename(input) })
     } else {
-      throw new UsageError(`不支持的路径类型：${input}`)
+      throw new UsageError(t("error.pathUnsupported", { path: input }))
     }
   }
   return collected
@@ -124,7 +129,8 @@ const writeFileAtomic = async (target: string, bytes: Uint8Array): Promise<void>
   }
 }
 
-const assertNoTargetConflicts = (files: Collected[], options: CompressOptions): void => {
+const assertNoTargetConflicts = (files: Collected[], options: CompressOptions, lang: Lang): void => {
+  const t = translator(lang)
   const byTarget = new Map<string, string[]>()
   for (const file of files) {
     const target = resolve(outputPathFor(file, options, options.convert))
@@ -138,7 +144,7 @@ const assertNoTargetConflicts = (files: Collected[], options: CompressOptions): 
   const conflicts = [...byTarget.entries()].filter(([, sources]) => sources.length > 1)
   if (conflicts.length === 0) return
   const detail = conflicts.map(([target, sources]) => `${target}（${sources.join("、")}）`).join("；")
-  throw new UsageError(`输出路径冲突：${detail}。请调整输入路径或分批压缩`)
+  throw new UsageError(t("error.outputConflict", { detail }))
 }
 
 const runPool = async <T>(items: T[], limit: number, worker: (item: T) => Promise<void>): Promise<void> => {
@@ -176,10 +182,11 @@ export const compressCommand = async (
   context: Context,
   options: CompressOptions,
 ): Promise<number> => {
+  const t = translator(context.lang)
   const key = await resolveApiKey(context.env)
-  if (!key) throw new UsageError(`未登录，请先运行 lubanpng login 或设置 ${API_KEY_ENV}`)
+  if (!key) throw new UsageError(t("error.notSignedIn", { env: API_KEY_ENV }))
 
-  const client = new ApiClient({ baseUrl: context.apiBase, apiKey: key })
+  const client = clientFor(context, key)
   const me = await client.me()
   const period = me.data.plan.period
   let remaining = me.quota.remaining ?? me.data.quota.remaining
@@ -187,11 +194,11 @@ export const compressCommand = async (
     if (quota.remaining !== null) remaining = quota.remaining
   }
 
-  const files = await collectFiles(options.paths, options.recursive)
+  const files = await collectFiles(options.paths, options.recursive, context.lang)
   if (files.length === 0) {
-    throw new UsageError(`没有找到可压缩的图片（支持 ${SUPPORTED_FORMATS_LABEL}）`)
+    throw new UsageError(t("error.noImages", { formats: t("formats.supported") }))
   }
-  assertNoTargetConflicts(files, options)
+  assertNoTargetConflicts(files, options, context.lang)
 
   const nameWidth = Math.max(...files.map((file) => file.name.length))
   const printOutcome = (outcome: FileOutcome): void => {
@@ -199,13 +206,18 @@ export const compressCommand = async (
     const pair = formatSizePair(outcome.originalSize, outcome.compressedSize)
     const original = pair.original.padStart(SIZE_COLUMN)
     if (!outcome.ok) {
-      context.io.write(`  ${name}  ${original} → 失败：${outcome.error ?? "压缩失败"}\n`)
+      context.io.write(
+        `${t("row.failed", { name, original, error: outcome.error ?? t("error.compressionFailed") })}\n`,
+      )
       return
     }
     const compressed = pair.compressed.padStart(SIZE_COLUMN)
     if (outcome.noGain) {
-      const note = outcome.converted === null ? "无收益，保留原图（不计次）" : `已转 ${outcome.converted}，体积未变小（不计次）`
-      context.io.write(`  ${name}  ${original} → ${compressed}   ${note}\n`)
+      const note =
+        outcome.converted === null
+          ? t("row.noteNoGain")
+          : t("row.noteConvertedNoGain", { file: outcome.converted })
+      context.io.write(`${t("row.noGain", { name, original, compressed, note })}\n`)
       return
     }
     const percent = savingsPercent(outcome.originalSize, outcome.compressedSize)
@@ -218,7 +230,7 @@ export const compressCommand = async (
     const failure = (error: string): FileOutcome => ({
       file,
       ok: false,
-      noGain: true,
+      noGain: false,
       converted: null,
       originalSize,
       compressedSize: 0,
@@ -226,9 +238,9 @@ export const compressCommand = async (
     })
     let prepared: PreparedUpload = { path: file.path, name: file.name, cleanup: async () => undefined }
     if (isHeicPath(file.path)) {
-      if (options.inPlace) return failure(HEIC_IN_PLACE_MESSAGE)
+      if (options.inPlace) return failure(heicInPlaceMessage(context.lang))
       try {
-        prepared = await prepareHeicUpload(file.path)
+        prepared = await prepareHeicUpload(file.path, process.platform, undefined, context.lang)
       } catch (error) {
         return failure(error instanceof Error ? error.message : String(error))
       }
@@ -241,7 +253,7 @@ export const compressCommand = async (
       onQuota(upload.quota)
       const view = await waitForCompletion(client, upload.data.task_id, onQuota)
       if (view.status !== "completed" || view.compressed_url === null) {
-        return failure(view.error_msg ?? "压缩失败")
+        return failure(view.error_msg ?? t("error.compressionFailed"))
       }
       if (view.no_gain) {
         if (options.inPlace) {
@@ -254,7 +266,7 @@ export const compressCommand = async (
             converted: null,
             originalSize,
             compressedSize: view.compressed_size ?? originalSize,
-            error: untouched ? null : "原文件已被改写",
+            error: untouched ? null : t("error.rewritten"),
           }
         }
         const bytes = await client.download(view.compressed_url)
@@ -289,7 +301,7 @@ export const compressCommand = async (
         error: null,
       }
     } catch (error) {
-      return failure(describeError(error))
+      return failure(describeError(error, context.lang))
     } finally {
       await prepared.cleanup()
     }
@@ -311,18 +323,18 @@ export const compressCommand = async (
     0,
   )
   const parts = [
-    `本次 ${succeeded.length} 张`,
-    `节省 ${formatBytes(saved)}`,
-    `${periodNoun(period)}剩余 ${remaining} 次`,
+    t("summary.batch", { count: succeeded.length }),
+    t("summary.saved", { size: formatBytes(saved) }),
+    t(period === "day" ? "quota.remaining.day" : "quota.remaining.month", { count: remaining }),
   ]
   const converted = outcomes.filter((outcome) => outcome.ok && !outcome.noGain && outcome.converted !== null)
-  if (converted.length > 0) parts.push(`${converted.length} 张已转换`)
+  if (converted.length > 0) parts.push(t("summary.converted", { count: converted.length }))
   const convertedNoGain = noGain.filter((outcome) => outcome.converted !== null)
-  if (convertedNoGain.length > 0) parts.push(`${convertedNoGain.length} 张已转换但体积未变小（不计次）`)
+  if (convertedNoGain.length > 0) parts.push(t("summary.convertedNoGain", { count: convertedNoGain.length }))
   const plainNoGain = noGain.length - convertedNoGain.length
-  if (plainNoGain > 0) parts.push(`${plainNoGain} 张无收益保留原图（不计次）`)
-  if (failed.length > 0) parts.push(`${failed.length} 张失败`)
-  context.io.write(`  ${parts.join("，")}\n`)
+  if (plainNoGain > 0) parts.push(t("summary.noGain", { count: plainNoGain }))
+  if (failed.length > 0) parts.push(t("summary.failed", { count: failed.length }))
+  context.io.write(`  ${parts.join(t("summary.separator"))}\n`)
 
   return failed.length > 0 || succeeded.length === 0 ? 1 : 0
 }

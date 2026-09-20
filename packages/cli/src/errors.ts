@@ -21,7 +21,7 @@ export class ApiError extends Error {
 
 export class CancelledError extends Error {
   constructor() {
-    super("已取消")
+    super("cancelled")
     this.name = "CancelledError"
   }
 }

@@ -6,7 +6,8 @@ import { logoutCommand } from "./commands/logout.js"
 import { usageCommand } from "./commands/usage.js"
 import type { Context } from "./context.js"
 import { CancelledError, UsageError } from "./errors.js"
-import { HELP } from "./help.js"
+import { renderHelp } from "./help.js"
+import { resolveLang, translator } from "./i18n/messages.js"
 import { defaultIo, type Io } from "./io.js"
 import { VERSION } from "./version.js"
 
@@ -18,11 +19,13 @@ export type RunOptions = {
 export const run = async (argv: string[], options: RunOptions = {}): Promise<number> => {
   const env = options.env ?? process.env
   const io = options.io ?? defaultIo
+  const lang = resolveLang(argv, env)
+  const t = translator(lang)
 
   try {
-    const parsed = parseArgv(argv)
+    const parsed = parseArgv(argv, lang)
     if (parsed.command === "help") {
-      io.write(HELP)
+      io.write(renderHelp(t))
       return 0
     }
     if (parsed.command === "version") {
@@ -35,6 +38,7 @@ export const run = async (argv: string[], options: RunOptions = {}): Promise<num
       apiBase: configured && configured !== "" ? configured : DEFAULT_API_BASE,
       env,
       io,
+      lang,
     }
 
     switch (parsed.command) {
@@ -59,14 +63,14 @@ export const run = async (argv: string[], options: RunOptions = {}): Promise<num
   } catch (error) {
     if (error instanceof UsageError) {
       io.writeError(`${error.message}\n`)
-      io.writeError("运行 lubanpng --help 查看用法\n")
+      io.writeError(`${t("error.usageHint")}\n`)
       return error.exitCode
     }
     if (error instanceof CancelledError) {
-      io.writeError("已取消\n")
+      io.writeError(`${t("error.cancelled")}\n`)
       return 130
     }
-    io.writeError(`${describeError(error)}\n`)
+    io.writeError(`${describeError(error, lang)}\n`)
     return 1
   }
 }

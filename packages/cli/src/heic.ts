@@ -3,10 +3,11 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, extname, join } from "node:path"
 import { promisify } from "node:util"
+import { DEFAULT_LANG, translator, type Lang } from "./i18n/messages.js"
 
 export const HEIC_EXTENSIONS = new Set([".heic", ".heif"])
-export const HEIC_UNSUPPORTED_MESSAGE = "HEIC 只能在 macOS 上由系统转换后上传，其他系统请先导出为 JPEG"
-export const HEIC_IN_PLACE_MESSAGE = "HEIC 会转成 JPEG，不能就地覆盖，请用 --out 或默认输出"
+export const heicUnsupportedMessage = (lang: Lang): string => translator(lang)("heic.unsupported")
+export const heicInPlaceMessage = (lang: Lang): string => translator(lang)("heic.inPlace")
 const SIPS_JPEG_QUALITY = "92"
 
 export type CommandRunner = (command: string, args: string[]) => Promise<void>
@@ -23,8 +24,10 @@ export const prepareHeicUpload = async (
   sourcePath: string,
   platform: NodeJS.Platform = process.platform,
   run: CommandRunner = runCommand,
+  lang: Lang = DEFAULT_LANG,
 ): Promise<PreparedUpload> => {
-  if (platform !== "darwin") throw new Error(HEIC_UNSUPPORTED_MESSAGE)
+  const t = translator(lang)
+  if (platform !== "darwin") throw new Error(t("heic.unsupported"))
   const dir = await mkdtemp(join(tmpdir(), "lubanpng-heic-"))
   const name = `${basename(sourcePath, extname(sourcePath))}.jpg`
   const target = join(dir, name)
@@ -33,7 +36,7 @@ export const prepareHeicUpload = async (
     await run("sips", ["-s", "format", "jpeg", "-s", "formatOptions", SIPS_JPEG_QUALITY, sourcePath, "--out", target])
   } catch (error) {
     await cleanup()
-    throw new Error(`HEIC 转换失败：${error instanceof Error ? error.message : String(error)}`)
+    throw new Error(t("heic.convertFailed", { detail: error instanceof Error ? error.message : String(error) }))
   }
   return { path: target, name, cleanup }
 }

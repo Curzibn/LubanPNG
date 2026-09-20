@@ -2,7 +2,7 @@ import { access, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { HEIC_UNSUPPORTED_MESSAGE, isHeicPath, prepareHeicUpload } from "../src/heic.js"
+import { heicInPlaceMessage, heicUnsupportedMessage, isHeicPath, prepareHeicUpload } from "../src/heic.js"
 
 describe("isHeicPath", () => {
   it("matches heic and heif extensions case-insensitively", () => {
@@ -26,8 +26,17 @@ describe("prepareHeicUpload", () => {
   })
 
   it("refuses to convert outside macOS", async () => {
-    await expect(prepareHeicUpload(join(root, "IMG_0001.HEIC"), "linux")).rejects.toThrow(HEIC_UNSUPPORTED_MESSAGE)
-    await expect(prepareHeicUpload(join(root, "IMG_0001.HEIC"), "win32")).rejects.toThrow(HEIC_UNSUPPORTED_MESSAGE)
+    await expect(prepareHeicUpload(join(root, "IMG_0001.HEIC"), "linux", undefined, "zh")).rejects.toThrow(
+      heicUnsupportedMessage("zh"),
+    )
+    await expect(prepareHeicUpload(join(root, "IMG_0001.HEIC"), "win32", undefined, "en")).rejects.toThrow(
+      /export as JPEG first/,
+    )
+  })
+
+  it("explains the in-place restriction in the requested language", () => {
+    expect(heicInPlaceMessage("zh")).toContain("不能就地覆盖")
+    expect(heicInPlaceMessage("en")).toContain("cannot overwrite in place")
   })
 
   it("runs the system converter into a temporary jpeg and cleans it up", async () => {
@@ -35,7 +44,7 @@ describe("prepareHeicUpload", () => {
     const prepared = await prepareHeicUpload(join(root, "IMG_0001.HEIC"), "darwin", async (command, args) => {
       calls.push({ command, args })
       await writeFile(args[args.length - 1] as string, new Uint8Array([0xff, 0xd8]))
-    })
+    }, "zh")
     expect(prepared.name).toBe("IMG_0001.jpg")
     expect(prepared.path.endsWith("IMG_0001.jpg")).toBe(true)
     expect(calls[0]?.command).toBe("sips")
@@ -48,9 +57,14 @@ describe("prepareHeicUpload", () => {
 
   it("wraps converter failures in a readable message", async () => {
     await expect(
-      prepareHeicUpload(join(root, "IMG_0001.HEIC"), "darwin", async () => {
-        throw new Error("sips exploded")
-      }),
+      prepareHeicUpload(
+        join(root, "IMG_0001.HEIC"),
+        "darwin",
+        async () => {
+          throw new Error("sips exploded")
+        },
+        "zh",
+      ),
     ).rejects.toThrow(/HEIC 转换失败：sips exploded/)
   })
 })

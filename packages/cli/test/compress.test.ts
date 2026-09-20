@@ -34,7 +34,7 @@ describe("collectFiles", () => {
 
   it("requires --recursive for directories", async () => {
     await mkdir(join(root, "images"))
-    await expect(collectFiles([join(root, "images")], false)).rejects.toThrow(UsageError)
+    await expect(collectFiles([join(root, "images")], false, "zh")).rejects.toThrow(UsageError)
   })
 
   it("collects image files recursively and skips other files", async () => {
@@ -45,7 +45,7 @@ describe("collectFiles", () => {
     await writeFile(join(root, "images", "d.avif"), "d")
     await writeFile(join(root, "images", "e.HEIC"), "e")
     await writeFile(join(root, "images", "notes.txt"), "n")
-    const files = await collectFiles([join(root, "images")], true)
+    const files = await collectFiles([join(root, "images")], true, "zh")
     expect(files.map((file) => file.relative).sort()).toEqual([
       "a.png",
       "d.avif",
@@ -56,7 +56,7 @@ describe("collectFiles", () => {
   })
 
   it("rejects missing paths", async () => {
-    await expect(collectFiles([join(root, "nope.png")], false)).rejects.toThrow(/路径不存在/)
+    await expect(collectFiles([join(root, "nope.png")], false, "zh")).rejects.toThrow(/路径不存在/)
   })
 })
 
@@ -89,6 +89,7 @@ describe("compressCommand", () => {
     apiBase: server.baseUrl,
     env: { LUBANPNG_API_KEY: "lp_test_key" },
     io: collectingIo(output),
+    lang: "zh",
   })
 
   it("writes into --out keeping the input layout and prints the summary", async () => {
@@ -129,7 +130,7 @@ describe("compressCommand", () => {
   it("keeps the original when the product is not smaller", async () => {
     const output: string[] = []
     const code = await compressCommand(
-      { apiBase: growingServer.baseUrl, env: { LUBANPNG_API_KEY: "lp_test_key" }, io: collectingIo(output) },
+      { apiBase: growingServer.baseUrl, env: { LUBANPNG_API_KEY: "lp_test_key" }, io: collectingIo(output), lang: "zh" },
       {
         paths: [join(root, "images", "photo.png")],
         out: undefined,
@@ -150,7 +151,7 @@ describe("compressCommand", () => {
   it("reports a converted product that did not get smaller without claiming a saving", async () => {
     const output: string[] = []
     const code = await compressCommand(
-      { apiBase: growingServer.baseUrl, env: { LUBANPNG_API_KEY: "lp_test_key" }, io: collectingIo(output) },
+      { apiBase: growingServer.baseUrl, env: { LUBANPNG_API_KEY: "lp_test_key" }, io: collectingIo(output), lang: "zh" },
       {
         paths: [join(root, "images", "photo.png")],
         out: join(root, "dist"),
@@ -236,9 +237,49 @@ describe("compressCommand", () => {
     const output: string[] = []
     await expect(
       compressCommand(
-        { apiBase: server.baseUrl, env: {}, io: collectingIo(output) },
+        { apiBase: server.baseUrl, env: {}, io: collectingIo(output), lang: "zh" },
         { paths: [join(root, "images", "photo.png")], out: undefined, inPlace: false, recursive: false, concurrency: 1 },
       ),
     ).rejects.toThrow(/未登录/)
+  })
+
+  it("prints the English row and summary when the language is en", async () => {
+    const output: string[] = []
+    const code = await compressCommand(
+      { apiBase: growingServer.baseUrl, env: { LUBANPNG_API_KEY: "lp_test_key" }, io: collectingIo(output), lang: "en" },
+      {
+        paths: [join(root, "images", "photo.png")],
+        out: join(root, "dist"),
+        inPlace: false,
+        recursive: false,
+        concurrency: 1,
+        convert: "webp",
+      },
+    )
+    expect(code).toBe(0)
+    const text = output.join("")
+    expect(text).toContain("Converted to photo.webp · not smaller · not charged")
+    expect(text).toContain("1 converted but not smaller · not charged")
+    expect(text).toContain("1 image, saved 0 B, 46 runs left this month")
+    expect(text).not.toContain("无收益")
+  })
+
+  it("prints the English failure row for a HEIC in-place request", async () => {
+    await writeFile(join(root, "images", "IMG_0009.heic"), new Uint8Array([1, 2, 3]))
+    const output: string[] = []
+    const code = await compressCommand(
+      { apiBase: server.baseUrl, env: { LUBANPNG_API_KEY: "lp_test_key" }, io: collectingIo(output), lang: "en" },
+      {
+        paths: [join(root, "images", "IMG_0009.heic")],
+        out: undefined,
+        inPlace: true,
+        recursive: false,
+        concurrency: 1,
+      },
+    )
+    expect(code).toBe(1)
+    const text = output.join("")
+    expect(text).toContain("failed: HEIC is converted to JPEG and cannot overwrite in place")
+    expect(text).toContain("1 failed")
   })
 })

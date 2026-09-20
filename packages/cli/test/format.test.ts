@@ -4,7 +4,6 @@ import {
   formatResetDate,
   formatSavings,
   formatSizePair,
-  periodNoun,
   savingsPercent,
 } from "../src/format.js"
 
@@ -32,15 +31,9 @@ describe("savings", () => {
 })
 
 describe("reset date", () => {
-  it("renders the reset instant in Asia/Shanghai", () => {
-    expect(formatResetDate("2026-09-30T16:00:00Z")).toBe("10 月 1 日")
-    expect(formatResetDate("soon")).toBe("")
-  })
-})
-
-describe("periodNoun", () => {
-  it("picks the right noun", () => {
-    expect(periodNoun("day")).toBe("今日")
-    expect(periodNoun("month")).toBe("本月")
+  it("renders the reset instant in Asia/Shanghai in both languages", () => {
+    expect(formatResetDate("2026-09-30T16:00:00Z", "zh")).toBe("10 月 1 日")
+    expect(formatResetDate("2026-09-30T16:00:00Z", "en")).toBe("Oct 1")
+    expect(formatResetDate("soon", "en")).toBe("")
   })
 })
