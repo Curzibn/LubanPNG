@@ -34,7 +34,7 @@ const locales: OgLocale[] = [
     mark: "鲁",
     eyebrow: "PNG · JPEG · GIF · WebP · AVIF 智能压缩",
     headline: "把图片刨薄，不伤画质。",
-    lede: "照片、截图与透明 PNG 收益最大；已经压过的图与多数动图空间有限，压不小就原样保留、不计次数。",
+    lede: "照片、截图与透明 PNG 收益最大；已经压过的图与多数动图空间有限，压不小不计次数。",
     chips: ["网页", "API", "CLI"],
   },
   {

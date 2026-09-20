@@ -34,9 +34,9 @@ export const en: Messages = {
   "home.eyebrow": "PNG · JPEG · GIF · WebP · AVIF smart compression",
   "home.title": "Shave image weight. Keep it sharp.",
   "home.lede.mobile":
-    "Photos, screenshots and transparent PNGs usually save the most; already-optimized files and most animations have little headroom, and anything that can't be made smaller is kept as is and never charged. One click also converts to WebP / AVIF.",
+    "Photos, screenshots and transparent PNGs usually save the most; already-optimized files and most animations have little headroom, and anything that can't be made smaller is never charged. One click also converts to WebP / AVIF.",
   "home.lede.desktop":
-    "LubanPNG gives each format its own path: PNG is palette-quantized then polished losslessly, JPEG has its source quality recovered first so already-light images are never re-compressed, animations are quantized frame by frame with the animation intact, and static images convert to WebP / AVIF in one click. Photos, screenshots and transparent PNGs usually save the most; already-optimized files and most animations have little headroom — a result that can't be made smaller keeps the original and is never charged.",
+    "LubanPNG gives each format its own path: PNG is palette-quantized then polished losslessly, JPEG has its source quality recovered first so already-light images are never re-compressed, animations are quantized frame by frame with the animation intact, and static images convert to WebP / AVIF in one click. Photos, screenshots and transparent PNGs usually save the most; already-optimized files and most animations have little headroom — a result that can't be made smaller is never charged.",
   "home.quota.anonymous.lead": "Today's free runs are used up.",
   "home.quota.anonymous.action": "Sign in to keep going",
   "home.quota.anonymous.body": "Signing up gives you 50 runs a month, shared across the web app, API and CLI.",
@@ -404,7 +404,7 @@ export const en: Messages = {
 
   "meta.home.title": "LubanPNG · Shave image weight, keep it sharp",
   "meta.home.description":
-    "Compress PNG, JPEG, GIF, WebP and AVIF images online — static images convert formats and animations stay animated. Photos, screenshots and transparent PNGs save the most, while already-optimized files and most animations have little headroom; results that can't get smaller are kept as is and never charged. One quota shared across web, API and CLI, free to use.",
+    "Compress PNG, JPEG, GIF, WebP and AVIF images online — static images convert formats and animations stay animated. Photos, screenshots and transparent PNGs save the most, while already-optimized files and most animations have little headroom; results that can't get smaller are never charged. One quota shared across web, API and CLI, free to use.",
   "meta.pricing.title": "Pricing · LubanPNG",
   "meta.pricing.description": "One quota shared across web, API and CLI: 5 runs a day signed out, 50 a month signed in — counted only when the output really gets smaller. Pro and metered plans are in the works.",
   "meta.developers.title": "Developers · LubanPNG",
