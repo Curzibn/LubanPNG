@@ -32,9 +32,35 @@ impl ShellTable {
         let root = static_dir.join("shells");
         let mut shells = HashMap::new();
         for (route, file) in SHELL_ROUTES {
-            if let Ok(html) = std::fs::read(root.join(file)) {
-                shells.insert(route, Bytes::from(html));
+            match std::fs::read(root.join(file)) {
+                Ok(html) => {
+                    shells.insert(route, Bytes::from(html));
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        route,
+                        file,
+                        root = %root.display(),
+                        error = %err,
+                        "static shell missing, requests fall back to the SPA index"
+                    );
+                }
             }
+        }
+        if shells.len() == SHELL_ROUTES.len() {
+            tracing::info!(
+                loaded = shells.len(),
+                total = SHELL_ROUTES.len(),
+                root = %root.display(),
+                "static shells loaded"
+            );
+        } else {
+            tracing::warn!(
+                loaded = shells.len(),
+                total = SHELL_ROUTES.len(),
+                root = %root.display(),
+                "static shells incomplete, pre-rendered first byte is degraded"
+            );
         }
         Self { shells }
     }
@@ -63,10 +89,17 @@ fn is_shells_asset_path(path: &str) -> bool {
     let Ok(decoded) = percent_decode_str(path.trim_start_matches('/')).decode_utf8() else {
         return false;
     };
-    decoded
-        .split('/')
-        .find(|segment| !segment.is_empty() && *segment != ".")
-        .is_some_and(|segment| segment == "shells")
+    let mut segments: Vec<&str> = Vec::new();
+    for segment in decoded.split('/') {
+        match segment {
+            "" | "." => continue,
+            ".." => {
+                segments.pop();
+            }
+            other => segments.push(other),
+        }
+    }
+    segments.first() == Some(&"shells")
 }
 
 fn shell_response(html: &Bytes) -> Response {
@@ -94,6 +127,46 @@ fn not_found_response() -> Response {
 mod tests {
     use super::*;
     use axum::body::to_bytes;
+    use std::io::Write;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone)]
+    struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for CapturedLogs {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CapturedLogs {
+        type Writer = CapturedLogs;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    fn capture_logs<F: FnOnce()>(run: F) -> String {
+        let buffer = Arc::new(Mutex::new(Vec::new()));
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .without_time()
+            .with_level(false)
+            .with_target(false)
+            .with_writer(CapturedLogs(buffer.clone()))
+            .finish();
+        let guard = tracing::subscriber::set_default(subscriber);
+        run();
+        drop(guard);
+        let bytes = buffer.lock().unwrap().clone();
+        String::from_utf8(bytes).unwrap()
+    }
 
     fn fixture_root(label: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -151,6 +224,48 @@ mod tests {
     }
 
     #[test]
+    fn complete_shells_load_reports_the_loaded_count() {
+        let root = fixture_root("logged-full");
+        for (route, file) in SHELL_ROUTES {
+            let path = root.join("shells").join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, format!("<html data-route=\"{}\"></html>", route)).unwrap();
+        }
+
+        let logs = capture_logs(|| {
+            ShellTable::load(&root);
+        });
+        assert!(logs.contains("static shells loaded"), "{logs}");
+        assert!(logs.contains("loaded=11"), "{logs}");
+        assert!(logs.contains("total=11"), "{logs}");
+        assert!(!logs.contains("static shell missing"), "{logs}");
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn partial_shells_load_warns_per_missing_file() {
+        let root = fixture_root("logged-partial");
+        let zh = root.join("shells/zh");
+        std::fs::create_dir_all(&zh).unwrap();
+        std::fs::write(zh.join("home.html"), "<html lang=\"zh-CN\"></html>").unwrap();
+
+        let logs = capture_logs(|| {
+            ShellTable::load(&root);
+        });
+        assert!(
+            logs.contains("static shells incomplete"),
+            "missing summary warning: {logs}"
+        );
+        assert!(logs.contains("loaded=1"), "{logs}");
+        assert!(logs.contains("total=11"), "{logs}");
+        assert!(logs.contains("static shell missing"), "{logs}");
+        assert!(logs.contains("zh/pricing.html"), "{logs}");
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
     fn blocks_every_path_that_resolves_into_the_shells_tree() {
         for path in [
             "/shells",
@@ -161,6 +276,10 @@ mod tests {
             "/./shells/terms.html",
             "/%73hells/en/home.html",
             "/shells/../shells/privacy.html",
+            "/assets/../shells/zh/home.html",
+            "/%2e%2e/shells/en/home.html",
+            "/a/b/../../shells/zh/home.html",
+            "/././shells/zh/home.html",
         ] {
             assert!(is_shells_asset_path(path), "{path} should be blocked");
         }

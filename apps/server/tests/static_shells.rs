@@ -196,6 +196,34 @@ async fn blocks_shell_asset_paths_from_outside() {
 }
 
 #[tokio::test]
+async fn never_serves_shell_files_through_dot_segment_paths() {
+    let dir = fixture_dir("dot-segments");
+    std::fs::write(dir.join("index.html"), SPA_INDEX).unwrap();
+    write_all_shells(&dir);
+    let router = router_with_static(&dir);
+
+    for path in [
+        "/x/../shells/zh/home.html",
+        "/x/y/../../shells/en/pricing.html",
+        "/%2e%2e/shells/zh/terms.html",
+        "/%2E%2E/shells/en/home.html",
+        "/assets/%2e%2e/shells/zh/privacy.html",
+        "/./shells/en/developers.html",
+        "/x/..//shells/zh/home.html",
+    ] {
+        let (status, _, body) = fetch(&router, path).await;
+        let html = text(&body);
+        assert!(
+            !html.contains("data-shell="),
+            "{path} leaked a static shell: {status} {html}"
+        );
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}: {html}");
+    }
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
 async fn keeps_existing_spa_and_not_found_semantics() {
     let dir = fixture_dir("regression");
     std::fs::write(dir.join("index.html"), SPA_INDEX).unwrap();
