@@ -448,11 +448,37 @@ impl TestApp {
             let data = reply.json()["data"].clone();
             let status = data["status"].as_str().unwrap();
             if status == "completed" || status == "failed" {
+                self.await_quota_settled(task_id).await;
                 return data;
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
         panic!("task {} did not reach a final state in time", task_id);
+    }
+
+    async fn await_quota_settled(&self, task_id: &str) {
+        let pool = db::connect(&test_config().database)
+            .await
+            .expect("test database");
+        let id = uuid::Uuid::parse_str(task_id).unwrap();
+        for _ in 0..100 {
+            let written: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM quota_ledger
+                 WHERE task_id = $1 AND kind IN ('settle', 'refund')",
+            )
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            if written > 0 {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        panic!(
+            "task {} reached a final state without a quota write",
+            task_id
+        );
     }
 }
 
@@ -1757,6 +1783,20 @@ fn visit_events_are_rate_limited_per_device() {
     });
 }
 
+fn unique_test_ip(label: &str) -> String {
+    let bytes = uuid::Uuid::new_v4().into_bytes();
+    let tag = label.bytes().fold(0u8, |acc, byte| acc.wrapping_add(byte));
+    format!("198.18.{}.{}", bytes[0], bytes[1] ^ tag)
+}
+
+async fn reset_unknown_ip_bucket(pool: &sqlx::PgPool, scope: &str) {
+    sqlx::query("DELETE FROM rate_limits WHERE key = $1")
+        .bind(format!("{scope}:ip:unknown"))
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
 #[test]
 fn visit_ip_comes_from_the_trusted_header_only() {
     run(async {
@@ -1764,13 +1804,16 @@ fn visit_ip_comes_from_the_trusted_header_only() {
         app.get("/v1/me").await;
         let device = device_id(&app);
         let pool = db::connect(&test_config().database).await.unwrap();
+        let forged_ip = unique_test_ip("visit-forged");
+        let trusted_ip = unique_test_ip("visit-trusted");
+        reset_unknown_ip_bucket(&pool, "visit").await;
 
         let forged = Request::builder()
             .method(Method::POST)
             .uri("/v1/events/visit")
             .header(header::CONTENT_TYPE, "application/json")
-            .header("x-forwarded-for", "198.51.100.9")
-            .header("x-real-ip", "198.51.100.10")
+            .header("x-forwarded-for", &forged_ip)
+            .header("x-real-ip", &forged_ip)
             .header(header::COOKIE, app.cookie_header().unwrap())
             .header("x-requested-with", "LubanPNG")
             .body(Body::from(serde_json::json!({ "path": "/" }).to_string()))
@@ -1782,8 +1825,8 @@ fn visit_ip_comes_from_the_trusted_header_only() {
             .method(Method::POST)
             .uri("/v1/events/visit")
             .header(header::CONTENT_TYPE, "application/json")
-            .header("x-client-ip", "203.0.113.7")
-            .header("x-forwarded-for", "198.51.100.9")
+            .header("x-client-ip", &trusted_ip)
+            .header("x-forwarded-for", &forged_ip)
             .header(header::COOKIE, app.cookie_header().unwrap())
             .header("x-requested-with", "LubanPNG")
             .body(Body::from(serde_json::json!({ "path": "/" }).to_string()))
@@ -1802,7 +1845,7 @@ fn visit_ip_comes_from_the_trusted_header_only() {
         .unwrap();
         assert_eq!(
             ips,
-            vec![None, Some("203.0.113.7".to_string())],
+            vec![None, Some(trusted_ip.clone())],
             "forwarded headers must not be trusted; only x-client-ip decides"
         );
 
@@ -1812,27 +1855,166 @@ fn visit_ip_comes_from_the_trusted_header_only() {
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert!(
-            unknown_key >= 1,
+        assert_eq!(
+            unknown_key, 1,
             "a missing trusted header must fall back to the closed 'unknown' bucket"
         );
 
         let forged_key: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(sum(count), 0)::bigint FROM rate_limits
-             WHERE key LIKE 'visit:ip:198.51.100.%'",
+            "SELECT COALESCE(sum(count), 0)::bigint FROM rate_limits WHERE key = $1",
         )
+        .bind(format!("visit:ip:{}", forged_ip))
         .fetch_one(&pool)
         .await
         .unwrap();
         assert_eq!(forged_key, 0, "forged addresses never key a rate limit");
 
         let trusted_key: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(sum(count), 0)::bigint FROM rate_limits WHERE key = 'visit:ip:203.0.113.7'",
+            "SELECT COALESCE(sum(count), 0)::bigint FROM rate_limits WHERE key = $1",
+        )
+        .bind(format!("visit:ip:{}", trusted_ip))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(trusted_key, 1);
+    });
+}
+
+#[test]
+fn anonymous_upload_rate_key_uses_only_the_trusted_header() {
+    run(async {
+        let app = test_app().await;
+        app.get("/v1/me").await;
+        let pool = db::connect(&test_config().database).await.unwrap();
+        let forged_ip = unique_test_ip("upload-forged");
+        let trusted_ip = unique_test_ip("upload-trusted");
+        reset_unknown_ip_bucket(&pool, "upload").await;
+        let png = gradient_png(64, 64);
+        let (content_type, bytes) = multipart_raw("file", "anon.png", &png);
+
+        let forged = Request::builder()
+            .method(Method::POST)
+            .uri("/v1/images/compress")
+            .header("x-forwarded-for", &forged_ip)
+            .header("x-real-ip", &forged_ip)
+            .header("x-requested-with", "LubanPNG")
+            .header(header::CONTENT_TYPE, &content_type)
+            .body(Body::from(bytes.clone()))
+            .unwrap();
+        let response = app.router.clone().oneshot(forged).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let (content_type, bytes) = multipart_raw("file", "anon.png", &png);
+        let trusted = Request::builder()
+            .method(Method::POST)
+            .uri("/v1/images/compress")
+            .header("x-client-ip", &trusted_ip)
+            .header("x-forwarded-for", &forged_ip)
+            .header("x-requested-with", "LubanPNG")
+            .header(header::CONTENT_TYPE, &content_type)
+            .body(Body::from(bytes))
+            .unwrap();
+        let response = app.router.clone().oneshot(trusted).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let unknown_key: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(sum(count), 0)::bigint FROM rate_limits
+             WHERE key = 'upload:ip:unknown'",
         )
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert!(trusted_key >= 1);
+        assert_eq!(
+            unknown_key, 1,
+            "an upload without a trusted header must key the closed 'unknown' bucket"
+        );
+
+        let forged_key: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(sum(count), 0)::bigint FROM rate_limits WHERE key = $1",
+        )
+        .bind(format!("upload:ip:{}", forged_ip))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(forged_key, 0, "forged addresses never key an upload limit");
+
+        let trusted_key: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(sum(count), 0)::bigint FROM rate_limits WHERE key = $1",
+        )
+        .bind(format!("upload:ip:{}", trusted_ip))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(trusted_key, 1);
+    });
+}
+
+#[test]
+fn otp_rate_key_uses_only_the_trusted_header() {
+    run(async {
+        let app = test_app().await;
+        app.get("/v1/me").await;
+        let pool = db::connect(&test_config().database).await.unwrap();
+        let forged_ip = unique_test_ip("otp-forged");
+        let trusted_ip = unique_test_ip("otp-trusted");
+        reset_unknown_ip_bucket(&pool, "otp").await;
+
+        let forged = Request::builder()
+            .method(Method::POST)
+            .uri("/v1/auth/otp")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("x-forwarded-for", &forged_ip)
+            .header("x-real-ip", &forged_ip)
+            .header("x-requested-with", "LubanPNG")
+            .body(Body::from(
+                serde_json::json!({ "email": unique_email() }).to_string(),
+            ))
+            .unwrap();
+        let response = app.router.clone().oneshot(forged).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let trusted = Request::builder()
+            .method(Method::POST)
+            .uri("/v1/auth/otp")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("x-client-ip", &trusted_ip)
+            .header("x-forwarded-for", &forged_ip)
+            .header("x-requested-with", "LubanPNG")
+            .body(Body::from(
+                serde_json::json!({ "email": unique_email() }).to_string(),
+            ))
+            .unwrap();
+        let response = app.router.clone().oneshot(trusted).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let unknown_key: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(sum(count), 0)::bigint FROM rate_limits WHERE key = 'otp:ip:unknown'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            unknown_key, 1,
+            "an OTP request without a trusted header must key the closed 'unknown' bucket"
+        );
+
+        let forged_key: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(sum(count), 0)::bigint FROM rate_limits WHERE key = $1",
+        )
+        .bind(format!("otp:ip:{}", forged_ip))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(forged_key, 0, "forged addresses never key an OTP limit");
+
+        let trusted_key: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(sum(count), 0)::bigint FROM rate_limits WHERE key = $1",
+        )
+        .bind(format!("otp:ip:{}", trusted_ip))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(trusted_key, 1);
     });
 }
 
