@@ -119,26 +119,30 @@ impl QuotaRepository {
     ) -> AppResult<()> {
         let units = units.max(1);
         let mut tx = self.pool.begin().await?;
-        sqlx::query(
-            "UPDATE quota_balances SET held = greatest(held - $4, 0), used = used + $4
-             WHERE subject_type = $1 AND subject_id = $2 AND period_key = $3",
-        )
-        .bind(subject_type)
-        .bind(subject_id)
-        .bind(period_key)
-        .bind(units)
-        .execute(&mut *tx)
-        .await?;
-        sqlx::query(
+        let inserted = sqlx::query(
             "INSERT INTO quota_ledger (subject_type, subject_id, kind, delta, period_key, task_id)
-             VALUES ($1, $2, 'settle', 0, $3, $4)",
+             VALUES ($1, $2, 'settle', 0, $3, $4)
+             ON CONFLICT (task_id, kind) WHERE task_id IS NOT NULL DO NOTHING",
         )
         .bind(subject_type)
         .bind(subject_id)
         .bind(period_key)
         .bind(task_id)
         .execute(&mut *tx)
-        .await?;
+        .await?
+        .rows_affected();
+        if inserted == 1 {
+            sqlx::query(
+                "UPDATE quota_balances SET held = greatest(held - $4, 0), used = used + $4
+                 WHERE subject_type = $1 AND subject_id = $2 AND period_key = $3",
+            )
+            .bind(subject_type)
+            .bind(subject_id)
+            .bind(period_key)
+            .bind(units)
+            .execute(&mut *tx)
+            .await?;
+        }
         tx.commit().await?;
         Ok(())
     }
@@ -153,19 +157,10 @@ impl QuotaRepository {
     ) -> AppResult<()> {
         let units = units.max(1);
         let mut tx = self.pool.begin().await?;
-        sqlx::query(
-            "UPDATE quota_balances SET held = greatest(held - $4, 0)
-             WHERE subject_type = $1 AND subject_id = $2 AND period_key = $3",
-        )
-        .bind(subject_type)
-        .bind(subject_id)
-        .bind(period_key)
-        .bind(units)
-        .execute(&mut *tx)
-        .await?;
-        sqlx::query(
+        let inserted = sqlx::query(
             "INSERT INTO quota_ledger (subject_type, subject_id, kind, delta, period_key, task_id)
-             VALUES ($1, $2, 'refund', $5, $3, $4)",
+             VALUES ($1, $2, 'refund', $5, $3, $4)
+             ON CONFLICT (task_id, kind) WHERE task_id IS NOT NULL DO NOTHING",
         )
         .bind(subject_type)
         .bind(subject_id)
@@ -173,7 +168,20 @@ impl QuotaRepository {
         .bind(task_id)
         .bind(units)
         .execute(&mut *tx)
-        .await?;
+        .await?
+        .rows_affected();
+        if inserted == 1 {
+            sqlx::query(
+                "UPDATE quota_balances SET held = greatest(held - $4, 0)
+                 WHERE subject_type = $1 AND subject_id = $2 AND period_key = $3",
+            )
+            .bind(subject_type)
+            .bind(subject_id)
+            .bind(period_key)
+            .bind(units)
+            .execute(&mut *tx)
+            .await?;
+        }
         tx.commit().await?;
         Ok(())
     }

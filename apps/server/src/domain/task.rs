@@ -166,30 +166,23 @@ impl TaskRecord {
     }
 
     pub fn no_gain(&self) -> bool {
-        match self.status() {
-            TaskStatus::Failed => true,
-            TaskStatus::Completed => self
-                .compressed_size
-                .is_some_and(|size| size >= self.original_size),
-            TaskStatus::Pending | TaskStatus::Processing => false,
+        match self.kind() {
+            TaskKind::Upscale => self.status() == TaskStatus::Failed,
+            TaskKind::Compress => match self.status() {
+                TaskStatus::Failed => true,
+                TaskStatus::Completed => self
+                    .compressed_size
+                    .is_some_and(|size| size >= self.original_size),
+                TaskStatus::Pending | TaskStatus::Processing => false,
+            },
         }
     }
 
     pub fn billed_units(&self) -> i32 {
-        match self.kind() {
-            TaskKind::Upscale => match self.status() {
-                TaskStatus::Failed => 0,
-                TaskStatus::Completed | TaskStatus::Pending | TaskStatus::Processing => {
-                    self.quota_units()
-                }
-            },
-            TaskKind::Compress => {
-                if self.no_gain() {
-                    0
-                } else {
-                    self.quota_units()
-                }
-            }
+        if self.no_gain() {
+            0
+        } else {
+            self.quota_units()
         }
     }
 
@@ -300,18 +293,21 @@ mod tests {
     #[test]
     fn upscale_billing_ignores_size_comparison() {
         let grown = upscale_task("completed", 1024, Some(4096), 1);
-        assert!(grown.no_gain());
+        assert!(!grown.no_gain());
         assert_eq!(grown.billed_units(), 1);
 
         let failed = upscale_task("failed", 1024, None, 1);
+        assert!(failed.no_gain());
         assert_eq!(failed.billed_units(), 0);
 
         for status in ["pending", "processing"] {
             let running = upscale_task(status, 1024, None, 1);
             assert_eq!(running.billed_units(), 1, "{status} keeps the reservation");
+            assert!(!running.no_gain(), "{status} is not settled yet");
         }
 
         let without_output = upscale_task("completed", 1024, None, 1);
+        assert!(!without_output.no_gain());
         assert_eq!(without_output.billed_units(), 1);
     }
 

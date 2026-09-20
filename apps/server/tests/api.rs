@@ -3203,7 +3203,7 @@ fn upscale_failure_refunds_and_reports_failed_no_charge() {
         assert_eq!(task["status"], "failed", "{}", task);
         assert_eq!(task["kind"], "upscale", "{}", task);
         assert_eq!(task["quota_units"], 0, "{}", task);
-        assert_eq!(task["no_gain"], false, "{}", task);
+        assert_eq!(task["no_gain"], true, "{}", task);
         assert!(
             task["error_msg"].as_str().unwrap().contains("放大失败"),
             "{}",
@@ -3396,6 +3396,99 @@ fn concurrent_upscale_claims_keep_a_single_flight_across_connections() {
             slot_freed,
             "a claim must eventually win against stray workers and free its slot"
         );
+    });
+}
+
+#[test]
+fn duplicate_settlement_moves_the_balance_once() {
+    run(async {
+        let _guard = upscale_test_guard();
+        let url = test_config().database.url.clone();
+        let pool = sqlx::PgPool::connect(&url).await.unwrap();
+        let repo = lubanpng::repositories::quota_repository::QuotaRepository::new(pool.clone());
+        let subject_id = uuid::Uuid::new_v4();
+        let period = format!(
+            "2099-{:02}",
+            1 + (uuid::Uuid::new_v4().as_u128() % 12) as u8
+        );
+        repo.ensure_period("device", subject_id, &period, 10)
+            .await
+            .unwrap();
+
+        let settle_task = uuid::Uuid::new_v4();
+        repo.reserve("device", subject_id, &period, settle_task, 2)
+            .await
+            .unwrap()
+            .expect("reserve must succeed with a fresh period");
+        repo.settle("device", subject_id, &period, settle_task, 2)
+            .await
+            .unwrap();
+        repo.settle("device", subject_id, &period, settle_task, 2)
+            .await
+            .unwrap();
+        let (used, held): (i32, i32) = sqlx::query_as(
+            "SELECT used, held FROM quota_balances WHERE subject_type='device' AND subject_id=$1 AND period_key=$2",
+        )
+        .bind(subject_id)
+        .bind(&period)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            (used, held),
+            (2, 0),
+            "a repeated settle must not move the balance twice"
+        );
+
+        let refund_task = uuid::Uuid::new_v4();
+        repo.reserve("device", subject_id, &period, refund_task, 1)
+            .await
+            .unwrap()
+            .expect("reserve must succeed");
+        repo.refund("device", subject_id, &period, refund_task, 1)
+            .await
+            .unwrap();
+        repo.refund("device", subject_id, &period, refund_task, 1)
+            .await
+            .unwrap();
+        let held: i32 = sqlx::query_scalar(
+            "SELECT held FROM quota_balances WHERE subject_type='device' AND subject_id=$1 AND period_key=$2",
+        )
+        .bind(subject_id)
+        .bind(&period)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            held, 0,
+            "a repeated refund must not credit the balance twice"
+        );
+
+        let duplicates: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM (
+                 SELECT task_id, kind FROM quota_ledger WHERE task_id IN ($1, $2)
+                 GROUP BY task_id, kind HAVING count(*) > 1
+             ) dupes",
+        )
+        .bind(settle_task)
+        .bind(refund_task)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(duplicates, 0);
+
+        sqlx::query("DELETE FROM quota_ledger WHERE subject_id = $1 AND period_key = $2")
+            .bind(subject_id)
+            .bind(&period)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM quota_balances WHERE subject_type='device' AND subject_id = $1 AND period_key = $2")
+            .bind(subject_id)
+            .bind(&period)
+            .execute(&pool)
+            .await
+            .unwrap();
     });
 }
 

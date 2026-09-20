@@ -84,6 +84,15 @@ impl TaskRepository {
     }
 
     pub async fn claim_next_upscale(&self, worker_id: &str) -> AppResult<Option<TaskRecord>> {
+        let mut tx = self.pool.begin().await?;
+        let locked: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock($1)")
+            .bind(UPSCALE_CLAIM_ADVISORY_KEY)
+            .fetch_one(&mut *tx)
+            .await?;
+        if !locked {
+            tx.rollback().await?;
+            return Ok(None);
+        }
         let record = sqlx::query_as::<_, TaskRecord>(
             "UPDATE tasks
              SET status = 'processing', locked_by = $1, locked_at = now(), started_at = now(), progress = 30
@@ -94,7 +103,6 @@ impl TaskRepository {
                        SELECT 1 FROM tasks busy
                        WHERE busy.kind = 'upscale' AND busy.status = 'processing'
                    )
-                   AND pg_try_advisory_xact_lock($2)
                  ORDER BY created_at
                  LIMIT 1
                  FOR UPDATE SKIP LOCKED
@@ -102,9 +110,9 @@ impl TaskRepository {
              RETURNING *",
         )
         .bind(worker_id)
-        .bind(UPSCALE_CLAIM_ADVISORY_KEY)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *tx)
         .await?;
+        tx.commit().await?;
         Ok(record)
     }
 

@@ -244,7 +244,7 @@ impl CompressionService {
             target_format: task.target_format.clone(),
             output_format: task.output_format().map(str::to_string),
             quota_units: task.billed_units(),
-            no_gain: task.kind() == TaskKind::Compress && task.no_gain(),
+            no_gain: task.no_gain(),
             error_msg: task.error_msg.clone(),
             created_at: task.created_at.timestamp(),
             completed_at: task.completed_at.map(|t| t.timestamp()),
