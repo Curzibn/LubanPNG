@@ -3331,9 +3331,9 @@ fn upscale_rejects_invalid_scale_convert_and_oversized_dimensions() {
 fn concurrent_upscale_claims_keep_a_single_flight_across_connections() {
     run(async {
         let _guard = upscale_test_guard();
-        let url = test_config().database.url.clone();
-        let pool_a = sqlx::PgPool::connect(&url).await.unwrap();
-        let pool_b = sqlx::PgPool::connect(&url).await.unwrap();
+        let config = test_config();
+        let pool_a = db::connect(&config.database).await.unwrap();
+        let pool_b = db::connect(&config.database).await.unwrap();
         drain_upscale_tasks(&pool_a).await;
         let repo_a = lubanpng::repositories::task_repository::TaskRepository::new(pool_a.clone());
         let repo_b = lubanpng::repositories::task_repository::TaskRepository::new(pool_b.clone());
@@ -3403,8 +3403,8 @@ fn concurrent_upscale_claims_keep_a_single_flight_across_connections() {
 fn duplicate_settlement_moves_the_balance_once() {
     run(async {
         let _guard = upscale_test_guard();
-        let url = test_config().database.url.clone();
-        let pool = sqlx::PgPool::connect(&url).await.unwrap();
+        let config = test_config();
+        let pool = db::connect(&config.database).await.unwrap();
         let repo = lubanpng::repositories::quota_repository::QuotaRepository::new(pool.clone());
         let subject_id = uuid::Uuid::new_v4();
         let period = format!(
