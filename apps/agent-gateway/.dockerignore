@@ -1,0 +1,7 @@
+node_modules
+test
+bunfig.toml
+tsconfig.json
+Dockerfile
+*.tgz
+.DS_Store

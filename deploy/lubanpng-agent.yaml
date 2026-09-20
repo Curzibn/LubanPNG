@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lubanpng-agent
+  namespace: lubanpng
+  labels:
+    app: lubanpng-agent
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: lubanpng-agent
+  template:
+    metadata:
+      labels:
+        app: lubanpng-agent
+    spec:
+      containers:
+        - name: gateway
+          image: registry.opus.wizthink.cn:5000/lubanpng/agent-gateway@sha256:6ef8192ded39898d8e5629d70ee4931d4375eb9db5e22e39ee49f6251e39efd9
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: lubanpng-agent-env
+          env:
+            - name: AGENT_GATEWAY_PORT
+              value: "8080"
+            - name: AGENT_GATEWAY_UPSTREAM_URL
+              value: http://lubanpng:80
+            - name: AGENT_GATEWAY_PUBLIC_BASE_URL
+              value: https://lubanpng.wizthink.cn
+            - name: AGENT_GATEWAY_SESSION_QUOTA
+              value: "5"
+            - name: AGENT_GATEWAY_SESSION_UPSCALE_QUOTA
+              value: "1"
+            - name: AGENT_GATEWAY_ANONYMOUS_DAILY_LIMIT
+              value: "10000"
+            - name: AGENT_GATEWAY_X402_ENABLED
+              value: "true"
+            - name: AGENT_GATEWAY_X402_FACILITATOR
+              value: https://x402.org/facilitator
+            - name: AGENT_GATEWAY_X402_NETWORK
+              value: eip155:84532
+            - name: AGENT_GATEWAY_X402_COMPRESS_MAX_PRICE
+              value: $0.005
+            - name: AGENT_GATEWAY_X402_COMPRESS_SETTLE_PRICE
+              value: $0.003
+            - name: AGENT_GATEWAY_X402_UPSCALE_MAX_PRICE
+              value: $0.02
+            - name: AGENT_GATEWAY_X402_UPSCALE_SETTLE_PRICE
+              value: $0.015
+            - name: AGENT_GATEWAY_X402_COMPRESS_DAILY_LIMIT
+              value: "5000"
+            - name: AGENT_GATEWAY_X402_UPSCALE_DAILY_LIMIT
+              value: "500"
+            - name: AGENT_GATEWAY_STATUS_WAIT_MAX
+              value: "30"
+            - name: AGENT_GATEWAY_UPSTREAM_TIMEOUT_MS
+              value: "120000"
+            - name: AGENT_GATEWAY_TRUST_CLIENT_IP
+              value: "true"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lubanpng-agent
+  namespace: lubanpng
+spec:
+  selector:
+    app: lubanpng-agent
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
