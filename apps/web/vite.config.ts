@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import type { Plugin } from "vite"
 import { defineConfig } from "vitest/config"
+import { staticShells } from "./vite.shells.ts"
 
 const backend = process.env.LUBANPNG_API_ORIGIN ?? "http://127.0.0.1:3000"
 const require = createRequire(import.meta.url)
@@ -28,7 +29,7 @@ const faviconAsset = (): Plugin => ({
 })
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), faviconAsset()],
+  plugins: [react(), tailwindcss(), faviconAsset(), staticShells()],
   server: {
     proxy: {
       "/v1": backend,

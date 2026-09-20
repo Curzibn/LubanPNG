@@ -3,15 +3,21 @@ import { messages } from "./messages.ts"
 
 export const SITE_ORIGIN = "https://lubanpng.wizthink.cn"
 
-export type RouteMetaId = "home" | "pricing" | "developers" | "terms" | "privacy" | "login" | "dashboard" | "notFound"
+export type PublicRouteId = "home" | "pricing" | "developers" | "terms" | "privacy"
 
-const publicPaths: Partial<Record<RouteMetaId, string>> = {
+export type RouteMetaId = PublicRouteId | "login" | "dashboard" | "notFound"
+
+export const PUBLIC_ROUTE_IDS: readonly PublicRouteId[] = ["home", "pricing", "developers", "terms", "privacy"]
+
+export const publicPaths: Record<PublicRouteId, string> = {
   home: "/",
   pricing: "/pricing",
   developers: "/developers",
   terms: "/terms",
   privacy: "/privacy",
 }
+
+const isPublicRoute = (id: RouteMetaId): id is PublicRouteId => Object.hasOwn(publicPaths, id)
 
 export type MetaTag = { attr: "name" | "property"; key: string; content: string }
 
@@ -29,7 +35,7 @@ export const buildPageHead = (id: RouteMetaId, locale: Locale, pathname: string)
   const title = dictionary[`meta.${id}.title`]
   const description = dictionary[`meta.${id}.description`]
   const image = locale === "en" ? `${SITE_ORIGIN}/og-en.png` : `${SITE_ORIGIN}/og.png`
-  const publicPath = publicPaths[id]
+  const publicPath = isPublicRoute(id) ? publicPaths[id] : undefined
   const pageUrl = `${SITE_ORIGIN}${publicPath === undefined ? pathname : localizedPath(publicPath, locale)}`
   const metas: MetaTag[] = [
     { attr: "name", key: "description", content: description },
