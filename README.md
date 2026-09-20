@@ -29,7 +29,7 @@ Because it reuses existing image pipelines instead of resampling blindly, cuttin
 | Anonymous | 5 per day | 5 MB | 24 hours |
 | Free account | 50 per month | 5 MB | 24 hours |
 
-You are only charged when the output is actually smaller. Failed compressions are free, and so is a run that ends up keeping the original file. An explicit format conversion costs 1 extra run (converting to the same format stays at 1).
+You are only charged when the output is actually smaller. Failed compressions are free, and so is a run whose result is not smaller than the original: without a conversion request the original file is kept, with one the converted artifact is still returned, and in both cases no run is charged. (On a run that does produce a smaller file, an explicit format conversion costs 1 extra run; converting to the same format stays at 1.)
 
 ### CLI
 
@@ -116,7 +116,7 @@ TinyPNG 式在线图片压缩：支持 PNG、JPEG、GIF、WebP、AVIF，静态�
 
 - 按格式各走一套压缩策略：PNG 调色板量化 + 无损重编码；JPEG 先反推原图质量再决定下刀、SSIM 兜底；GIF / APNG / 动态 WebP 逐帧量化并保留动画；WebP 有损重编码 + SSIM 兜底；AVIF 用 AV1 重编码。
 - 格式转换：静态图可转成 WebP / AVIF / PNG / JPEG；透明图转 JPEG 需指定背景色。
-- 只对有效压缩计次：压缩失败不计，压完没变小（保留原图）也不计。
+- 只对有效压缩计次：压缩失败不计，压完没变小也不计（未转换时保留原图；转换产物仍会返回但不计次）。
 - 一个额度池三个入口：同一账号，网页、API、CLI 共用一份次数。
 - HEIC / HEIF：iPhone Safari 选图会自动转成 JPEG 上传；CLI 在 macOS 上先转 JPEG 再上传；API 不接受 HEIC。
 
