@@ -70,8 +70,52 @@ const ActionCell = ({ task }: { task: TaskRecord }) => {
   return null
 }
 
-export const TasksCard = ({ retentionHours }: { retentionHours: number }) => {
+export const TaskRow = ({ task }: { task: TaskRecord }) => {
   const { locale, t } = useI18n()
+  const savings =
+    task.kind === "compress" && task.status === "completed" && task.compressed_size !== null && !task.no_gain
+      ? formatSavings(savingsPercent(task.original_size, task.compressed_size))
+      : null
+  const scale = task.kind === "upscale" && task.status === "completed" ? task.scale : null
+  return (
+    <tr>
+      <Td className="whitespace-nowrap font-mono text-ink-secondary">{formatUnixRelative(task.created_at, locale)}</Td>
+      <Td className="max-w-sidebar truncate font-mono" title={task.original_name}>
+        {task.original_name}
+        {task.target_format && (
+          <span className="ml-2 rounded-mark bg-panel px-1.5 py-0.5 text-label-2xs font-semibold text-ink-secondary">
+            → {task.target_format.toUpperCase()}
+          </span>
+        )}
+      </Td>
+      <Td className="whitespace-nowrap font-mono text-ink-secondary">
+        <SizeCell task={task} />
+      </Td>
+      <Td className={cx("whitespace-nowrap font-mono", savings ? "font-semibold text-jade" : "text-ink-secondary")}>
+        {scale !== null ? (
+          <span className="rounded-mark bg-panel px-1.5 py-0.5 text-label-2xs font-semibold text-ink-secondary">
+            ×{scale === "x2" ? 2 : 4}
+          </span>
+        ) : (
+          (savings ?? "—")
+        )}
+      </Td>
+      <Td className="whitespace-nowrap text-ink-secondary">{t(sourceLabelKeys[task.source])}</Td>
+      <Td className="whitespace-nowrap">
+        <span className="inline-flex items-center gap-1.5">
+          <span className={cx("size-2 rounded-pill", statusDot(task))} aria-hidden="true" />
+          {statusText(task, t)}
+        </span>
+      </Td>
+      <Td className="whitespace-nowrap">
+        <ActionCell task={task} />
+      </Td>
+    </tr>
+  )
+}
+
+export const TasksCard = ({ retentionHours }: { retentionHours: number }) => {
+  const { t } = useI18n()
   const [tasks, setTasks] = useState<TaskRecord[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -125,41 +169,9 @@ export const TasksCard = ({ retentionHours }: { retentionHours: number }) => {
               </Td>
             </tr>
           )}
-          {tasks?.map((task) => {
-            const savings =
-              task.status === "completed" && task.compressed_size !== null && !task.no_gain
-                ? formatSavings(savingsPercent(task.original_size, task.compressed_size))
-                : null
-            return (
-              <tr key={task.task_id}>
-                <Td className="whitespace-nowrap font-mono text-ink-secondary">{formatUnixRelative(task.created_at, locale)}</Td>
-                <Td className="max-w-sidebar truncate font-mono" title={task.original_name}>
-                  {task.original_name}
-                  {task.target_format && (
-                    <span className="ml-2 rounded-mark bg-panel px-1.5 py-0.5 text-label-2xs font-semibold text-ink-secondary">
-                      → {task.target_format.toUpperCase()}
-                    </span>
-                  )}
-                </Td>
-                <Td className="whitespace-nowrap font-mono text-ink-secondary">
-                  <SizeCell task={task} />
-                </Td>
-                <Td className={cx("whitespace-nowrap font-mono", savings ? "font-semibold text-jade" : "text-ink-secondary")}>
-                  {savings ?? "—"}
-                </Td>
-                <Td className="whitespace-nowrap text-ink-secondary">{t(sourceLabelKeys[task.source])}</Td>
-                <Td className="whitespace-nowrap">
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className={cx("size-2 rounded-pill", statusDot(task))} aria-hidden="true" />
-                    {statusText(task, t)}
-                  </span>
-                </Td>
-                <Td className="whitespace-nowrap">
-                  <ActionCell task={task} />
-                </Td>
-              </tr>
-            )
-          })}
+          {tasks?.map((task) => (
+            <TaskRow key={task.task_id} task={task} />
+          ))}
         </tbody>
       </Table>
     </section>

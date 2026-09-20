@@ -63,11 +63,15 @@ export type CreatedApiKey = {
 
 export type TaskStatus = "pending" | "processing" | "completed" | "failed"
 export type TaskSource = "web" | "api" | "cli"
+export type TaskKind = "compress" | "upscale"
+export type UpscaleScale = "x2" | "x4"
 
 export type TaskRecord = {
   task_id: string
   status: TaskStatus
   source: TaskSource
+  kind: TaskKind
+  scale: UpscaleScale | null
   original_name: string
   original_size: number
   compressed_size: number | null
