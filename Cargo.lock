@@ -1962,6 +1962,7 @@ dependencies = [
  "mozjpeg",
  "object_store",
  "oxipng",
+ "percent-encoding",
  "png",
  "rand 0.10.2",
  "serde",

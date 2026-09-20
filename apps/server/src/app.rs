@@ -20,6 +20,7 @@ use crate::services::auth::AuthService;
 use crate::services::compression::CompressionService;
 use crate::services::quota::QuotaService;
 use crate::services::worker;
+use crate::shells::{serve_static_shell, ShellTable};
 use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{header, HeaderMap, StatusCode, Uri};
 use axum::middleware::from_fn_with_state;
@@ -258,7 +259,11 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         let index_path = static_dir.join("index.html");
         let index = std::fs::read_to_string(&index_path).unwrap_or_default();
         let spa = Router::new().fallback(serve_spa).with_state(Arc::new(index));
-        router = router.fallback_service(ServeDir::new(static_dir).fallback(spa));
+        let shells = Arc::new(ShellTable::load(static_dir));
+        let web: Router = Router::new()
+            .fallback_service(ServeDir::new(static_dir).fallback(spa))
+            .layer(from_fn_with_state(shells, serve_static_shell));
+        router = router.fallback_service(web);
     }
 
     router

@@ -9,3 +9,4 @@ pub mod middleware;
 pub mod repositories;
 pub mod response;
 pub mod services;
+pub mod shells;
