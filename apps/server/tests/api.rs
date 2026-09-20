@@ -218,7 +218,7 @@ impl TestApp {
         let mut builder = Request::builder()
             .method(method.clone())
             .uri(uri)
-            .header("x-forwarded-for", &self.client_ip);
+            .header("x-client-ip", &self.client_ip);
         if let Some(token) = bearer {
             builder = builder.header(header::AUTHORIZATION, format!("Bearer {}", token));
         } else if let Some(cookies) = self.cookie_header() {
@@ -377,7 +377,7 @@ impl TestApp {
         let mut builder = Request::builder()
             .method(Method::POST)
             .uri("/v1/images/compress")
-            .header("x-forwarded-for", &self.client_ip)
+            .header("x-client-ip", &self.client_ip)
             .header("x-requested-with", "LubanPNG")
             .header(header::CONTENT_TYPE, content_type)
             .header(header::CONTENT_LENGTH, declared);
@@ -1758,6 +1758,85 @@ fn visit_events_are_rate_limited_per_device() {
 }
 
 #[test]
+fn visit_ip_comes_from_the_trusted_header_only() {
+    run(async {
+        let app = test_app().await;
+        app.get("/v1/me").await;
+        let device = device_id(&app);
+        let pool = db::connect(&test_config().database).await.unwrap();
+
+        let forged = Request::builder()
+            .method(Method::POST)
+            .uri("/v1/events/visit")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("x-forwarded-for", "198.51.100.9")
+            .header("x-real-ip", "198.51.100.10")
+            .header(header::COOKIE, app.cookie_header().unwrap())
+            .header("x-requested-with", "LubanPNG")
+            .body(Body::from(serde_json::json!({ "path": "/" }).to_string()))
+            .unwrap();
+        let response = app.router.clone().oneshot(forged).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let trusted = Request::builder()
+            .method(Method::POST)
+            .uri("/v1/events/visit")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("x-client-ip", "203.0.113.7")
+            .header("x-forwarded-for", "198.51.100.9")
+            .header(header::COOKIE, app.cookie_header().unwrap())
+            .header("x-requested-with", "LubanPNG")
+            .body(Body::from(serde_json::json!({ "path": "/" }).to_string()))
+            .unwrap();
+        let response = app.router.clone().oneshot(trusted).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let ips: Vec<Option<String>> = sqlx::query_scalar(
+            "SELECT host(ip) FROM visits
+             WHERE subject_type = 'device' AND subject_id = $1
+             ORDER BY id",
+        )
+        .bind(device)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            ips,
+            vec![None, Some("203.0.113.7".to_string())],
+            "forwarded headers must not be trusted; only x-client-ip decides"
+        );
+
+        let unknown_key: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(sum(count), 0)::bigint FROM rate_limits WHERE key = 'visit:ip:unknown'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(
+            unknown_key >= 1,
+            "a missing trusted header must fall back to the closed 'unknown' bucket"
+        );
+
+        let forged_key: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(sum(count), 0)::bigint FROM rate_limits
+             WHERE key LIKE 'visit:ip:198.51.100.%'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(forged_key, 0, "forged addresses never key a rate limit");
+
+        let trusted_key: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(sum(count), 0)::bigint FROM rate_limits WHERE key = 'visit:ip:203.0.113.7'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(trusted_key >= 1);
+    });
+}
+
+#[test]
 fn visit_user_agent_is_truncated_to_256() {
     run(async {
         let app = test_app().await;
@@ -1769,7 +1848,7 @@ fn visit_user_agent_is_truncated_to_256() {
             .uri("/v1/events/visit")
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::USER_AGENT, &long_agent)
-            .header("x-forwarded-for", &app.client_ip)
+            .header("x-client-ip", &app.client_ip)
             .header(header::COOKIE, app.cookie_header().unwrap())
             .header("x-requested-with", "LubanPNG")
             .body(Body::from(serde_json::json!({ "path": "/" }).to_string()))

@@ -6,26 +6,24 @@ use axum::http::header::SET_COOKIE;
 use axum::http::{HeaderMap, HeaderValue, Method};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
+use std::net::IpAddr;
 use std::sync::Arc;
+
+pub const CLIENT_IP_HEADER: &str = "x-client-ip";
 
 #[derive(Debug, Clone)]
 pub struct ClientMeta {
     pub ip: String,
 }
 
+pub fn trusted_client_ip(headers: &HeaderMap) -> Option<IpAddr> {
+    let raw = headers.get(CLIENT_IP_HEADER)?.to_str().ok()?.trim();
+    raw.parse::<IpAddr>().ok()
+}
+
 pub fn client_ip(headers: &HeaderMap) -> String {
-    headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.split(',').next())
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
-        .or_else(|| {
-            headers
-                .get("x-real-ip")
-                .and_then(|v| v.to_str().ok())
-                .map(|v| v.trim().to_string())
-        })
+    trusted_client_ip(headers)
+        .map(|ip| ip.to_string())
         .unwrap_or_else(|| "unknown".to_string())
 }
 
@@ -86,4 +84,81 @@ pub async fn subject_layer(
         }
     }
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
+        let mut map = HeaderMap::new();
+        for (name, value) in pairs {
+            map.insert(
+                axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap(),
+                HeaderValue::from_str(value).unwrap(),
+            );
+        }
+        map
+    }
+
+    #[test]
+    fn trusted_client_ip_accepts_a_single_literal() {
+        assert_eq!(
+            trusted_client_ip(&headers(&[("x-client-ip", "203.0.113.7")])),
+            Some("203.0.113.7".parse().unwrap())
+        );
+        assert_eq!(
+            trusted_client_ip(&headers(&[("x-client-ip", "  203.0.113.7  ")])),
+            Some("203.0.113.7".parse().unwrap())
+        );
+        assert_eq!(
+            trusted_client_ip(&headers(&[("x-client-ip", "2001:db8::42")])),
+            Some("2001:db8::42".parse().unwrap())
+        );
+    }
+
+    #[test]
+    fn trusted_client_ip_rejects_multi_value_port_and_garbage() {
+        for raw in [
+            "203.0.113.7, 198.51.100.9",
+            "203.0.113.7,203.0.113.8",
+            "203.0.113.7:443",
+            "[2001:db8::1]:443",
+            "not-an-ip",
+            "",
+            "1.2.3",
+            "999.1.1.1",
+            "203.0.113.7/24",
+        ] {
+            assert_eq!(
+                trusted_client_ip(&headers(&[("x-client-ip", raw)])),
+                None,
+                "{raw} must not be trusted"
+            );
+        }
+    }
+
+    #[test]
+    fn trusted_client_ip_ignores_forwarded_headers() {
+        let spoofed = headers(&[
+            ("x-forwarded-for", "198.51.100.9"),
+            ("x-real-ip", "198.51.100.10"),
+            ("forwarded", "for=198.51.100.11"),
+        ]);
+        assert_eq!(trusted_client_ip(&spoofed), None);
+        assert_eq!(client_ip(&spoofed), "unknown");
+    }
+
+    #[test]
+    fn client_ip_falls_back_to_unknown() {
+        assert_eq!(client_ip(&headers(&[])), "unknown");
+        assert_eq!(
+            client_ip(&headers(&[("x-client-ip", "203.0.113.7")])),
+            "203.0.113.7"
+        );
+        assert_eq!(
+            client_ip(&headers(&[("x-client-ip", "2001:db8::42")])),
+            "2001:db8::42"
+        );
+    }
 }
