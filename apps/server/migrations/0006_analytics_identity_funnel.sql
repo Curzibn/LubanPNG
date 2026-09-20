@@ -59,11 +59,12 @@ FROM tasks
 LEFT JOIN analytics.visitor_keys AS keys
     ON keys.subject_type = tasks.subject_type AND keys.subject_id = tasks.subject_id;
 
+-- uploaders/counted 为全来源口径（含 CLI、API 等无页面访问的主体）；attributed_uploaders 只统计上传日或之前有页面访问的主体，是漏斗里与 visitors 可比的一段；counted 为真正计次的产物。
 CREATE VIEW analytics.daily_funnel AS
 WITH days AS (
     SELECT day FROM analytics.identity_visits
     UNION
-    SELECT day FROM analytics.identity_tasks WHERE source = 'web'
+    SELECT day FROM analytics.identity_tasks
     UNION
     SELECT date(created_at AT TIME ZONE 'Asia/Shanghai') FROM accounts
 ),
@@ -75,23 +76,22 @@ visitors_by_day AS (
 uploaders_by_day AS (
     SELECT day, count(DISTINCT visitor_id) AS uploaders
     FROM analytics.identity_tasks
-    WHERE source = 'web'
     GROUP BY day
 ),
 attributed_uploaders_by_day AS (
     SELECT tasks.day, count(DISTINCT tasks.visitor_id) AS attributed_uploaders
     FROM analytics.identity_tasks AS tasks
-    WHERE tasks.source = 'web'
-      AND EXISTS (
-          SELECT 1 FROM analytics.identity_visits AS visits
-          WHERE visits.visitor_id = tasks.visitor_id
-      )
+    WHERE EXISTS (
+        SELECT 1 FROM analytics.identity_visits AS visits
+        WHERE visits.visitor_id = tasks.visitor_id
+          AND visits.day <= tasks.day
+    )
     GROUP BY tasks.day
 ),
 counted_by_day AS (
     SELECT day, count(*) AS counted
     FROM analytics.identity_tasks
-    WHERE source = 'web' AND status = 'completed' AND compressed_size < original_size
+    WHERE status = 'completed' AND compressed_size < original_size
     GROUP BY day
 ),
 registrations_by_day AS (
@@ -131,6 +131,8 @@ CREATE VIEW analytics.traffic_channels AS
 WITH touches AS (
     SELECT
         COALESCE(keys.visitor_id, visits.subject_id) AS visitor_id,
+        visits.id AS touch_id,
+        visits.occurred_at,
         date(visits.occurred_at AT TIME ZONE 'Asia/Shanghai') AS day,
         CASE
             WHEN visits.utm_source IS NOT NULL THEN 'utm:' || visits.utm_source
@@ -148,7 +150,7 @@ first_touch AS (
         day AS first_day,
         touch_channel
     FROM touches
-    ORDER BY visitor_id, day, touch_channel
+    ORDER BY visitor_id, occurred_at, touch_id
 ),
 web_activity AS (
     SELECT visitor_id, status, original_size, compressed_size

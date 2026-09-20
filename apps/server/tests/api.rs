@@ -1683,13 +1683,14 @@ fn analytics_views_are_queryable_and_consistent() {
             "SELECT count(*) FROM analytics.daily_funnel f
              WHERE f.uploaders <> (
                  SELECT count(DISTINCT visitor_id) FROM analytics.identity_tasks t
-                 WHERE t.source = 'web' AND t.day = f.day
+                 WHERE t.day = f.day
              )
              OR f.attributed_uploaders <> (
                  SELECT count(DISTINCT t.visitor_id) FROM analytics.identity_tasks t
-                 WHERE t.source = 'web' AND t.day = f.day
+                 WHERE t.day = f.day
                    AND EXISTS (
-                       SELECT 1 FROM analytics.identity_visits v WHERE v.visitor_id = t.visitor_id
+                       SELECT 1 FROM analytics.identity_visits v
+                       WHERE v.visitor_id = t.visitor_id AND v.day <= t.day
                    )
              )",
         )
@@ -1702,7 +1703,7 @@ fn analytics_views_are_queryable_and_consistent() {
             "SELECT count(*) FROM analytics.daily_funnel f
              WHERE f.counted <> (
                  SELECT count(*) FROM analytics.identity_tasks t
-                 WHERE t.source = 'web' AND t.day = f.day
+                 WHERE t.day = f.day
                    AND t.status = 'completed' AND t.compressed_size < t.original_size
              )",
         )
@@ -1903,6 +1904,155 @@ fn visitor_keys_merge_a_signed_up_device_into_its_account() {
         .unwrap();
         assert_eq!(device_visits, 1, "raw visits keep the device identity");
         assert_eq!(account_visits, 0);
+    });
+}
+
+#[test]
+fn funnel_uploaders_cover_every_source_while_attribution_stays_visit_bound() {
+    run(async {
+        let app = test_app().await;
+        app.get("/v1/me").await;
+        let email = login(&app).await;
+        let token = app
+            .post_json("/v1/me/api-keys", serde_json::json!({ "name": "funnel" }))
+            .await
+            .json()["data"]["key"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let png = gradient_png(64, 64);
+        let api_id = app.upload_ok("api.png", &png, Some(&token)).await;
+        let api_task = app.wait_final(&api_id).await;
+        assert_eq!(api_task["status"], "completed", "{}", api_task);
+        assert_eq!(api_task["source"], "api", "{}", api_task);
+
+        let pool = db::connect(&test_config().database).await.unwrap();
+        let account: uuid::Uuid = sqlx::query_scalar("SELECT id FROM accounts WHERE email = $1")
+            .bind(&email)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        let (all_sources, web_only, attributed, visitors): (i64, i64, i64, i64) = sqlx::query_as(
+            "SELECT
+                 (SELECT count(DISTINCT visitor_id) FROM analytics.identity_tasks
+                  WHERE day = date(now() AT TIME ZONE 'Asia/Shanghai')),
+                 (SELECT count(DISTINCT visitor_id) FROM analytics.identity_tasks
+                  WHERE day = date(now() AT TIME ZONE 'Asia/Shanghai') AND source = 'web'),
+                 (SELECT count(DISTINCT t.visitor_id) FROM analytics.identity_tasks t
+                  WHERE t.day = date(now() AT TIME ZONE 'Asia/Shanghai')
+                    AND EXISTS (SELECT 1 FROM analytics.identity_visits v
+                                WHERE v.visitor_id = t.visitor_id AND v.day <= t.day)),
+                 (SELECT count(DISTINCT visitor_id) FROM analytics.identity_visits
+                  WHERE day = date(now() AT TIME ZONE 'Asia/Shanghai'))",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let (view_uploaders, view_attributed, view_visitors): (i64, i64, i64) = sqlx::query_as(
+            "SELECT uploaders, attributed_uploaders, visitors FROM analytics.daily_funnel
+             WHERE day = date(now() AT TIME ZONE 'Asia/Shanghai')",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            view_uploaders, all_sources,
+            "uploaders is the all-source count"
+        );
+        assert_eq!(
+            view_attributed, attributed,
+            "attribution needs a prior visit"
+        );
+        assert_eq!(view_visitors, visitors);
+        assert!(
+            all_sources > web_only,
+            "the API-only subject must push the all-source count past web-only"
+        );
+        assert!(view_attributed <= view_visitors);
+
+        let prior_visits: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM analytics.identity_visits v
+             JOIN analytics.identity_tasks t ON t.visitor_id = v.visitor_id
+             WHERE t.subject_id = $1 AND t.source = 'api' AND v.day <= t.day",
+        )
+        .bind(account)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            prior_visits, 0,
+            "the API-only subject has no page visit on or before its upload"
+        );
+    });
+}
+
+#[test]
+fn traffic_channels_keep_the_earliest_touch_within_a_day() {
+    run(async {
+        let app = test_app().await;
+        app.get("/v1/me").await;
+        let tagged = format!("early-{}", uuid::Uuid::new_v4().simple());
+        app.post_json(
+            "/v1/events/visit",
+            serde_json::json!({ "path": "/", "utm_source": &tagged }),
+        )
+        .await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        app.post_json("/v1/events/visit", serde_json::json!({ "path": "/" }))
+            .await;
+
+        let pool = db::connect(&test_config().database).await.unwrap();
+        let tagged_channel = format!("utm:{tagged}");
+        let (view_visitors, view_day): (i64, chrono::NaiveDate) = sqlx::query_as(
+            "SELECT visitors, first_day FROM analytics.traffic_channels WHERE channel = $1",
+        )
+        .bind(&tagged_channel)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let (expected_visitors, expected_day): (i64, chrono::NaiveDate) = sqlx::query_as(
+            "WITH earliest AS (
+                 SELECT DISTINCT ON (visits.subject_id)
+                     visits.subject_id,
+                     date(visits.occurred_at AT TIME ZONE 'Asia/Shanghai') AS day,
+                     CASE WHEN visits.utm_source IS NOT NULL THEN 'utm:' || visits.utm_source
+                          ELSE 'direct' END AS channel
+                 FROM visits
+                 ORDER BY visits.subject_id, visits.occurred_at, visits.id
+             )
+             SELECT count(*)::bigint, min(day)
+             FROM earliest WHERE channel = $1",
+        )
+        .bind(&tagged_channel)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            view_visitors, expected_visitors,
+            "the view must agree with the earliest-touch recomputation"
+        );
+        assert_eq!(view_day, expected_day);
+        assert_eq!(
+            view_visitors, 1,
+            "the tagged UTM touch is the device's first"
+        );
+
+        let device = device_id(&app);
+        let keyed: uuid::Uuid = sqlx::query_scalar(
+            "SELECT visitor_id FROM analytics.visitor_keys
+             WHERE subject_type = 'device' AND subject_id = $1",
+        )
+        .bind(device)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(keyed, device, "an unattributed device keeps its own key");
     });
 }
 
@@ -2283,26 +2433,48 @@ fn terminal_quota_units_match_the_ledger_reserve_and_refund_net() {
             .sum();
 
         let device = device_id(&app);
-        let ledger_total: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(-sum(delta) FILTER (WHERE kind IN ('reserve', 'refund') AND task_id IS NOT NULL), 0)::bigint
-             FROM quota_ledger
-             WHERE subject_type = 'device' AND subject_id = $1",
-        )
-        .bind(device)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(view_total, ledger_total);
+        let device_ledger = |pool: sqlx::PgPool, device: uuid::Uuid| async move {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COALESCE(-sum(delta) FILTER (WHERE kind IN ('reserve', 'refund') AND task_id IS NOT NULL), 0)::bigint
+                 FROM quota_ledger
+                 WHERE subject_type = 'device' AND subject_id = $1",
+            )
+            .bind(device)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        };
+        let device_used = |pool: sqlx::PgPool, device: uuid::Uuid| async move {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COALESCE(sum(used), 0)::bigint FROM quota_balances
+                 WHERE subject_type = 'device' AND subject_id = $1",
+            )
+            .bind(device)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        };
 
-        let balance_used: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(sum(used), 0)::bigint FROM quota_balances
-             WHERE subject_type = 'device' AND subject_id = $1",
-        )
-        .bind(device)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(view_total, balance_used);
+        let mut ledger_total = device_ledger(pool.clone(), device).await;
+        let mut balance_used = device_used(pool.clone(), device).await;
+        for _ in 0..40 {
+            if ledger_total == view_total && balance_used == view_total {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            ledger_total = device_ledger(pool.clone(), device).await;
+            balance_used = device_used(pool.clone(), device).await;
+        }
+        assert_eq!(
+            view_total, ledger_total,
+            "view counted {} but the ledger net is {}",
+            view_total, ledger_total
+        );
+        assert_eq!(
+            view_total, balance_used,
+            "view counted {} but balances used {}",
+            view_total, balance_used
+        );
     });
 }
 

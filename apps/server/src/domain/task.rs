@@ -128,3 +128,70 @@ impl TaskRecord {
             .map(|name| format!("/v1/images/download/{}", name))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn task(
+        status: &str,
+        original_size: i64,
+        compressed_size: Option<i64>,
+        units: i16,
+    ) -> TaskRecord {
+        TaskRecord {
+            id: Uuid::nil(),
+            subject_type: "device".to_string(),
+            subject_id: Uuid::nil(),
+            source: "web".to_string(),
+            status: status.to_string(),
+            progress: 0,
+            original_name: "image.png".to_string(),
+            original_size,
+            compressed_size,
+            input_key: "uploads/x.png".to_string(),
+            output_key: compressed_size.map(|_| "outputs/free/x.png".to_string()),
+            error_msg: None,
+            quota_period: "2026-09-20".to_string(),
+            quota_units: units,
+            target_format: None,
+            background: None,
+            lang: "zh".to_string(),
+            locked_by: None,
+            locked_at: None,
+            created_at: Utc::now(),
+            started_at: None,
+            completed_at: None,
+            expires_at: None,
+        }
+    }
+
+    #[test]
+    fn non_terminal_tasks_report_the_reserved_units() {
+        for status in ["pending", "processing"] {
+            let record = task(status, 1024, None, 2);
+            assert_eq!(record.billed_units(), 2, "{status} keeps the reservation");
+            assert_eq!(record.quota_units(), 2);
+            assert!(!record.no_gain(), "{status} is not settled yet");
+        }
+    }
+
+    #[test]
+    fn no_gain_matches_never_counted() {
+        let completed_gain = task("completed", 1024, Some(512), 2);
+        assert!(!completed_gain.no_gain());
+        assert_eq!(completed_gain.billed_units(), 2);
+
+        let completed_equal = task("completed", 1024, Some(1024), 1);
+        assert!(completed_equal.no_gain());
+        assert_eq!(completed_equal.billed_units(), 0);
+
+        let completed_grown = task("completed", 1024, Some(2048), 2);
+        assert!(completed_grown.no_gain());
+        assert_eq!(completed_grown.billed_units(), 0);
+
+        let failed = task("failed", 1024, None, 2);
+        assert!(failed.no_gain());
+        assert_eq!(failed.billed_units(), 0);
+    }
+}
