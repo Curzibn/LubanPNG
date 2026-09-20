@@ -37,6 +37,7 @@ export const en: Messages = {
     "Photos, screenshots and transparent PNGs usually save the most; already-optimized files and most animations have little headroom, and anything that can't be made smaller is never charged. One click also converts to WebP / AVIF. Upscaling 2× / 4× runs through the API; failed upscales are never charged.",
   "home.lede.desktop":
     "LubanPNG gives each format its own path: PNG is palette-quantized then polished losslessly, JPEG has its source quality recovered first so already-light images are never re-compressed, animations are quantized frame by frame with the animation intact, and static images convert to WebP / AVIF in one click. Photos, screenshots and transparent PNGs usually save the most; already-optimized files and most animations have little headroom — a result that can't be made smaller is never charged. Upscaling 2× / 4× runs through the API; failed upscales are never charged.",
+  "home.lede.apiLink": "through the API",
   "home.quota.anonymous.lead": "Today's free runs are used up.",
   "home.quota.anonymous.action": "Sign in to keep going",
   "home.quota.anonymous.body": "Signing up gives you 50 runs a month, shared across the web app, API and CLI.",

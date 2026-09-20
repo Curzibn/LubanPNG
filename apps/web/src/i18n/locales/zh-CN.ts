@@ -35,6 +35,7 @@ export const zhCN = {
     "照片、截图与透明 PNG 通常收益最大，已经压过的图和多数动图空间有限；压不小就不计次数，还能一键转 WebP / AVIF。放大 2× / 4× 通过 API，失败不计次数。",
   "home.lede.desktop":
     "鲁班刨按格式各走一套压缩路径：PNG 先做调色板量化再无损重编码，JPEG 先反推原图质量、低质量图不再重复压缩，动图逐帧量化并保留动画，静态图还能一键转成 WebP / AVIF。照片、截图与透明 PNG 通常收益最大；已经压过的图与多数动图空间有限，压不小就不计次数。放大 2× / 4× 通过 API，失败不计次数。",
+  "home.lede.apiLink": "通过 API",
   "home.quota.anonymous.lead": "今日免费次数已用完。",
   "home.quota.anonymous.action": "登录后继续用",
   "home.quota.anonymous.body": "注册即每月 50 次，网页、API、CLI 共用同一份额度。",

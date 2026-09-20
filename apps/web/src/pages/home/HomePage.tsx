@@ -19,8 +19,23 @@ import { QuotaChip } from "./QuotaChip.tsx"
 import { ResultsBoard } from "./ResultsBoard.tsx"
 import { useCompressor } from "./useCompressor.ts"
 
+const LedeText = ({ text, label, to }: { text: string; label: string; to: string }) => {
+  const index = text.indexOf(label)
+  if (index < 0) return <>{text}</>
+  return (
+    <>
+      {text.slice(0, index)}
+      <Link to={to} className="text-vermilion hover:text-vermilion-hover">
+        {label}
+      </Link>
+      {text.slice(index + label.length)}
+    </>
+  )
+}
+
 const Hero = () => {
-  const { t } = useI18n()
+  const { locale, t } = useI18n()
+  const upscaleHref = `${localizedPath("/developers", locale)}#upscale`
   return (
     <section className="flex flex-col gap-3.5 pb-5 pt-9 md:items-center md:gap-5 md:pb-9 md:pt-18 md:text-center">
       <Eyebrow size="responsive">{t("home.eyebrow")}</Eyebrow>
@@ -28,8 +43,12 @@ const Hero = () => {
         {t("home.title")}
       </h1>
       <p className="max-w-lede text-body text-pretty text-ink-secondary md:text-lede">
-        <span className="md:hidden">{t("home.lede.mobile")}</span>
-        <span className="hidden md:inline">{t("home.lede.desktop")}</span>
+        <span className="md:hidden">
+          <LedeText text={t("home.lede.mobile")} label={t("home.lede.apiLink")} to={upscaleHref} />
+        </span>
+        <span className="hidden md:inline">
+          <LedeText text={t("home.lede.desktop")} label={t("home.lede.apiLink")} to={upscaleHref} />
+        </span>
       </p>
     </section>
   )

@@ -105,4 +105,9 @@ describe("home quota guidance", () => {
     expect(html).toContain("1 run left this month")
     expect(html).not.toContain("Join the waitlist")
   })
+
+  it("links the API upscale hint to the developer anchor in both languages", () => {
+    expect(renderHome("/", meFor({ remaining: 5 }))).toContain('href="/developers#upscale"')
+    expect(renderHome("/en/", meFor({ remaining: 5 }))).toContain('href="/en/developers#upscale"')
+  })
 })
