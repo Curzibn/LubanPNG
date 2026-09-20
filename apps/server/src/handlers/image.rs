@@ -3,6 +3,7 @@ use crate::domain::compression::{Background, ConversionRequest, OutputFormat};
 use crate::domain::subject::Subject;
 use crate::error::AppError;
 use crate::handlers::extract::ClientMeta;
+use crate::i18n::{Lang, Msg};
 use crate::response::{ApiResponse, ApiResponseError};
 use crate::services::compression::TaskStatusView;
 use axum::extract::{Multipart, Path, Query, State};
@@ -39,9 +40,6 @@ pub struct StatusQuery {
     pub wait: Option<u64>,
 }
 
-pub const CONVERT_MESSAGE: &str = "convert 只支持 png、jpeg、webp、avif";
-pub const BACKGROUND_MESSAGE: &str = "background 需要是 #RRGGBB 形式的颜色";
-
 #[utoipa::path(
     post,
     path = "/v1/images/compress",
@@ -63,9 +61,10 @@ pub async fn upload_image(
     State(state): State<Arc<AppState>>,
     Extension(subject): Extension<Subject>,
     Extension(meta): Extension<ClientMeta>,
+    Extension(lang): Extension<Lang>,
     multipart: Multipart,
 ) -> Result<Json<ApiResponse<UploadResponse>>, AppError> {
-    let upload = parse_multipart(multipart, state.config.server.max_upload_size).await?;
+    let upload = parse_multipart(multipart, state.config.server.max_upload_size, lang).await?;
     if !subject.is_account() {
         let allowed = state
             .rate_limits
@@ -76,14 +75,18 @@ pub async fn upload_image(
             )
             .await?;
         if !allowed {
-            return Err(AppError::rate_limited(
-                "该网络今日的匿名压缩次数已用完，登录后可继续使用",
-            ));
+            return Err(AppError::rate_limited(Msg::AnonymousDailyQuotaUsed, lang));
         }
     }
     let task = state
         .compression
-        .submit(&subject, upload.data, &upload.filename, upload.conversion)
+        .submit(
+            &subject,
+            upload.data,
+            &upload.filename,
+            upload.conversion,
+            lang,
+        )
         .await?;
     Ok(Json(ApiResponse::success(UploadResponse {
         task_id: task.id.to_string(),
@@ -106,26 +109,37 @@ pub async fn upload_image(
 )]
 pub async fn get_task_status(
     State(state): State<Arc<AppState>>,
+    Extension(lang): Extension<Lang>,
     Path(task_id): Path<String>,
     Query(query): Query<StatusQuery>,
 ) -> Result<Json<ApiResponse<TaskStatusView>>, AppError> {
-    let task_id = Uuid::parse_str(&task_id).map_err(|_| AppError::not_found("任务不存在"))?;
+    let task_id =
+        Uuid::parse_str(&task_id).map_err(|_| AppError::not_found(Msg::TaskNotFound, lang))?;
     let wait = query
         .wait
         .unwrap_or(0)
         .min(state.config.limits.status_wait_max_secs);
     let view = state
         .compression
-        .status(task_id, Duration::from_secs(wait))
+        .status(task_id, Duration::from_secs(wait), lang)
         .await?;
     Ok(Json(ApiResponse::success(view)))
 }
 
-fn multipart_error(err: axum::extract::multipart::MultipartError, max_size: u64) -> AppError {
+fn multipart_error(
+    err: axum::extract::multipart::MultipartError,
+    max_size: u64,
+    lang: Lang,
+) -> AppError {
     if err.status() == axum::http::StatusCode::PAYLOAD_TOO_LARGE {
-        AppError::file_too_large(0, max_size)
+        AppError::file_too_large(0, max_size, lang)
     } else {
-        AppError::validation(format!("解析表单数据失败: {}", err))
+        AppError::validation(
+            Msg::ParseFormFailed {
+                detail: err.to_string(),
+            },
+            lang,
+        )
     }
 }
 
@@ -138,21 +152,28 @@ pub struct UploadRequest {
 pub fn parse_conversion(
     convert: Option<&str>,
     background: Option<&str>,
+    lang: Lang,
 ) -> Result<Option<ConversionRequest>, AppError> {
     let Some(raw_target) = convert.map(str::trim).filter(|value| !value.is_empty()) else {
         return Ok(None);
     };
-    let target = OutputFormat::parse(raw_target).ok_or_else(|| AppError::validation(CONVERT_MESSAGE))?;
+    let target = OutputFormat::parse(raw_target)
+        .ok_or_else(|| AppError::validation(Msg::ConvertTargetInvalid, lang))?;
     let background = match background.map(str::trim).filter(|value| !value.is_empty()) {
         None => None,
-        Some(raw) => {
-            Some(Background::parse(raw).ok_or_else(|| AppError::validation(BACKGROUND_MESSAGE))?)
-        }
+        Some(raw) => Some(
+            Background::parse(raw)
+                .ok_or_else(|| AppError::validation(Msg::BackgroundInvalid, lang))?,
+        ),
     };
     Ok(Some(ConversionRequest { target, background }))
 }
 
-async fn parse_multipart(mut multipart: Multipart, max_size: u64) -> Result<UploadRequest, AppError> {
+async fn parse_multipart(
+    mut multipart: Multipart,
+    max_size: u64,
+    lang: Lang,
+) -> Result<UploadRequest, AppError> {
     let mut file_data: Option<Bytes> = None;
     let mut filename: Option<String> = None;
     let mut convert: Option<String> = None;
@@ -161,7 +182,7 @@ async fn parse_multipart(mut multipart: Multipart, max_size: u64) -> Result<Uplo
     while let Some(field) = multipart
         .next_field()
         .await
-        .map_err(|e| multipart_error(e, max_size))?
+        .map_err(|e| multipart_error(e, max_size, lang))?
     {
         match field.name() {
             Some("file") => {
@@ -169,21 +190,31 @@ async fn parse_multipart(mut multipart: Multipart, max_size: u64) -> Result<Uplo
                 let data = field
                     .bytes()
                     .await
-                    .map_err(|e| multipart_error(e, max_size))?;
+                    .map_err(|e| multipart_error(e, max_size, lang))?;
                 file_data = Some(data);
             }
             Some("convert") => {
-                convert = Some(field.text().await.map_err(|e| multipart_error(e, max_size))?);
+                convert = Some(
+                    field
+                        .text()
+                        .await
+                        .map_err(|e| multipart_error(e, max_size, lang))?,
+                );
             }
             Some("background") => {
-                background = Some(field.text().await.map_err(|e| multipart_error(e, max_size))?);
+                background = Some(
+                    field
+                        .text()
+                        .await
+                        .map_err(|e| multipart_error(e, max_size, lang))?,
+                );
             }
             _ => {}
         }
     }
 
-    let data = file_data.ok_or_else(|| AppError::validation("文件不能为空"))?;
-    let conversion = parse_conversion(convert.as_deref(), background.as_deref())?;
+    let data = file_data.ok_or_else(|| AppError::validation(Msg::FileEmpty, lang))?;
+    let conversion = parse_conversion(convert.as_deref(), background.as_deref(), lang)?;
     Ok(UploadRequest {
         data,
         filename: filename.unwrap_or_else(|| "image".to_string()),
@@ -197,15 +228,48 @@ mod tests {
 
     #[test]
     fn conversion_fields_are_validated() {
-        assert!(parse_conversion(None, Some("#ffffff")).unwrap().is_none());
-        assert!(parse_conversion(Some("  "), None).unwrap().is_none());
-        let webp = parse_conversion(Some("WebP"), None).unwrap().unwrap();
+        assert!(parse_conversion(None, Some("#ffffff"), Lang::Zh)
+            .unwrap()
+            .is_none());
+        assert!(parse_conversion(Some("  "), None, Lang::Zh)
+            .unwrap()
+            .is_none());
+        let webp = parse_conversion(Some("WebP"), None, Lang::Zh)
+            .unwrap()
+            .unwrap();
         assert_eq!(webp.target, OutputFormat::WebP);
         assert_eq!(webp.background, None);
-        let jpeg = parse_conversion(Some("image/jpeg"), Some("#FFCC00")).unwrap().unwrap();
+        let jpeg = parse_conversion(Some("image/jpeg"), Some("#FFCC00"), Lang::Zh)
+            .unwrap()
+            .unwrap();
         assert_eq!(jpeg.target, OutputFormat::Jpeg);
-        assert_eq!(jpeg.background.map(|b| b.to_hex()), Some("#ffcc00".to_string()));
-        assert!(matches!(parse_conversion(Some("gif"), None), Err(AppError::Validation(_))));
-        assert!(matches!(parse_conversion(Some("png"), Some("white")), Err(AppError::Validation(_))));
+        assert_eq!(
+            jpeg.background.map(|b| b.to_hex()),
+            Some("#ffcc00".to_string())
+        );
+        assert!(matches!(
+            parse_conversion(Some("gif"), None, Lang::Zh),
+            Err(AppError::Validation { .. })
+        ));
+        assert!(matches!(
+            parse_conversion(Some("png"), Some("white"), Lang::Zh),
+            Err(AppError::Validation { .. })
+        ));
+    }
+
+    #[test]
+    fn conversion_messages_follow_language() {
+        let zh = parse_conversion(Some("gif"), None, Lang::Zh)
+            .unwrap_err()
+            .message();
+        assert_eq!(zh, "convert 只支持 png、jpeg、webp、avif");
+        let en = parse_conversion(Some("gif"), None, Lang::En)
+            .unwrap_err()
+            .message();
+        assert_eq!(en, "convert only supports png, jpeg, webp and avif");
+        let en_background = parse_conversion(Some("jpeg"), Some("white"), Lang::En)
+            .unwrap_err()
+            .message();
+        assert_eq!(en_background, "background must be a color like #RRGGBB");
     }
 }

@@ -6,6 +6,7 @@ use image::GenericImageView;
 use lubanpng::app::{build_router, build_state, start_workers};
 use lubanpng::config::AppConfig;
 use lubanpng::error::AppResult;
+use lubanpng::i18n::{login_code_email, Lang};
 use lubanpng::infrastructure::db;
 use lubanpng::infrastructure::mail::{DisabledMailer, Mailer};
 use lubanpng::infrastructure::storage::{ObjectStorage, S3Storage};
@@ -24,8 +25,17 @@ fn run<F: std::future::Future<Output = ()>>(future: F) {
     runtime().block_on(future)
 }
 
+#[derive(Clone)]
+struct CapturedCode {
+    to: String,
+    code: String,
+    lang: Lang,
+    subject: String,
+    body: String,
+}
+
 struct CapturingMailer {
-    codes: Mutex<Vec<(String, String)>>,
+    codes: Mutex<Vec<CapturedCode>>,
 }
 
 #[async_trait]
@@ -34,24 +44,47 @@ impl Mailer for CapturingMailer {
         true
     }
 
-    async fn send_login_code(&self, to: &str, code: &str, _ttl_minutes: i64) -> AppResult<()> {
-        self.codes
-            .lock()
-            .unwrap()
-            .push((to.to_string(), code.to_string()));
+    async fn send_login_code(
+        &self,
+        to: &str,
+        code: &str,
+        ttl_minutes: i64,
+        lang: Lang,
+    ) -> AppResult<()> {
+        let content = login_code_email(lang, code, ttl_minutes);
+        self.codes.lock().unwrap().push(CapturedCode {
+            to: to.to_string(),
+            code: code.to_string(),
+            lang,
+            subject: content.subject,
+            body: content.body,
+        });
         Ok(())
     }
 }
 
 impl CapturingMailer {
     fn last_code_for(&self, email: &str) -> String {
+        self.last_for(email).code
+    }
+
+    fn last_lang_for(&self, email: &str) -> Lang {
+        self.last_for(email).lang
+    }
+
+    fn last_email_for(&self, email: &str) -> (String, String) {
+        let entry = self.last_for(email);
+        (entry.subject.clone(), entry.body.clone())
+    }
+
+    fn last_for(&self, email: &str) -> CapturedCode {
         self.codes
             .lock()
             .unwrap()
             .iter()
             .rev()
-            .find(|(to, _)| to == email)
-            .map(|(_, code)| code.clone())
+            .find(|captured| captured.to == email)
+            .cloned()
             .expect("a login code was sent")
     }
 }
@@ -169,6 +202,19 @@ impl TestApp {
         body: Body,
         bearer: Option<&str>,
     ) -> Reply {
+        self.send_with_language(method, uri, content_type, body, bearer, None)
+            .await
+    }
+
+    async fn send_with_language(
+        &self,
+        method: Method,
+        uri: &str,
+        content_type: Option<&str>,
+        body: Body,
+        bearer: Option<&str>,
+        accept_language: Option<&str>,
+    ) -> Reply {
         let mut builder = Request::builder()
             .method(method.clone())
             .uri(uri)
@@ -183,6 +229,9 @@ impl TestApp {
         }
         if let Some(ct) = content_type {
             builder = builder.header(header::CONTENT_TYPE, ct);
+        }
+        if let Some(language) = accept_language {
+            builder = builder.header(header::ACCEPT_LANGUAGE, language);
         }
         let response = self
             .router
@@ -210,6 +259,18 @@ impl TestApp {
         self.send(Method::GET, uri, None, Body::empty(), None).await
     }
 
+    async fn get_with_language(&self, uri: &str, accept_language: &str) -> Reply {
+        self.send_with_language(
+            Method::GET,
+            uri,
+            None,
+            Body::empty(),
+            None,
+            Some(accept_language),
+        )
+        .await
+    }
+
     async fn post_json(&self, uri: &str, body: serde_json::Value) -> Reply {
         self.send(
             Method::POST,
@@ -217,6 +278,23 @@ impl TestApp {
             Some("application/json"),
             Body::from(body.to_string()),
             None,
+        )
+        .await
+    }
+
+    async fn post_json_with_language(
+        &self,
+        uri: &str,
+        body: serde_json::Value,
+        accept_language: &str,
+    ) -> Reply {
+        self.send_with_language(
+            Method::POST,
+            uri,
+            Some("application/json"),
+            Body::from(body.to_string()),
+            None,
+            Some(accept_language),
         )
         .await
     }
@@ -233,6 +311,24 @@ impl TestApp {
         .await
     }
 
+    async fn upload_with_language(
+        &self,
+        filename: &str,
+        content: &[u8],
+        accept_language: &str,
+    ) -> Reply {
+        let (content_type, body) = multipart_body("file", filename, content);
+        self.send_with_language(
+            Method::POST,
+            "/v1/images/compress",
+            Some(&content_type),
+            body,
+            None,
+            Some(accept_language),
+        )
+        .await
+    }
+
     async fn upload_with(&self, filename: &str, content: &[u8], fields: &[(&str, &str)]) -> Reply {
         let (content_type, body) = multipart_with_fields(filename, content, fields);
         self.send(
@@ -245,11 +341,36 @@ impl TestApp {
         .await
     }
 
-    async fn upload_with_len(
+    async fn upload_with_fields_and_language(
+        &self,
+        filename: &str,
+        content: &[u8],
+        fields: &[(&str, &str)],
+        accept_language: &str,
+    ) -> Reply {
+        let (content_type, body) = multipart_with_fields(filename, content, fields);
+        self.send_with_language(
+            Method::POST,
+            "/v1/images/compress",
+            Some(&content_type),
+            body,
+            None,
+            Some(accept_language),
+        )
+        .await
+    }
+
+    async fn upload_with_len(&self, filename: &str, content: &[u8], bearer: Option<&str>) -> Reply {
+        self.upload_with_len_and_language(filename, content, bearer, None)
+            .await
+    }
+
+    async fn upload_with_len_and_language(
         &self,
         filename: &str,
         content: &[u8],
         bearer: Option<&str>,
+        accept_language: Option<&str>,
     ) -> Reply {
         let (content_type, bytes) = multipart_raw("file", filename, content);
         let declared = bytes.len();
@@ -262,6 +383,9 @@ impl TestApp {
             .header(header::CONTENT_LENGTH, declared);
         if let Some(token) = bearer {
             builder = builder.header(header::AUTHORIZATION, format!("Bearer {}", token));
+        }
+        if let Some(language) = accept_language {
+            builder = builder.header(header::ACCEPT_LANGUAGE, language);
         }
         let response = self
             .router
@@ -823,6 +947,21 @@ fn otp_is_unavailable_when_mail_is_not_configured() {
             .await;
         assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(reply.json()["code"], 2003);
+        assert_eq!(reply.json()["msg"], "邮件服务未配置，暂时无法发送验证码");
+
+        let en = app
+            .post_json_with_language(
+                "/v1/auth/otp",
+                serde_json::json!({ "email": unique_email() }),
+                "en",
+            )
+            .await;
+        assert_eq!(en.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(en.json()["code"], 2003);
+        assert_eq!(
+            en.json()["msg"],
+            "Email service is temporarily unavailable, please try again later"
+        );
     });
 }
 
@@ -930,6 +1069,248 @@ fn body_layer_rejection_reports_the_server_body_limit() {
         assert_eq!(body["code"], 1004);
         let msg = body["msg"].as_str().unwrap();
         assert!(msg.contains("50.00 MB"), "unexpected message: {msg}");
+    });
+}
+
+#[test]
+fn english_requests_localize_file_too_large() {
+    run(async {
+        let app = test_app().await;
+        let oversized = vec![0u8; 6 * 1024 * 1024];
+        let en = app
+            .upload_with_language("big.png", &oversized, "en-US,en;q=0.9")
+            .await;
+        assert_eq!(en.status, StatusCode::PAYLOAD_TOO_LARGE);
+        let body = en.json();
+        assert_eq!(body["code"], 1004);
+        let msg = body["msg"].as_str().unwrap();
+        assert!(
+            msg.contains("The file is 6.00 MB, over the 5.00 MB limit"),
+            "{msg}"
+        );
+        assert!(!msg.contains('文'), "{msg}");
+
+        let zh = app
+            .upload_with_language("big.png", &oversized, "zh-CN")
+            .await;
+        assert_eq!(zh.status, StatusCode::PAYLOAD_TOO_LARGE);
+        let zh_msg = zh.json()["msg"].as_str().unwrap().to_string();
+        assert_eq!(
+            zh_msg,
+            "文件大小 6.00 MB 超过最大限制 5.00 MB，请上传小于 5.00 MB 的文件"
+        );
+
+        let huge = vec![0u8; 52 * 1024 * 1024];
+        let layer = app
+            .upload_with_len_and_language("huge.png", &huge, None, Some("en"))
+            .await;
+        assert_eq!(layer.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(layer.json()["code"], 1004);
+        let layer_msg = layer.json()["msg"].as_str().unwrap().to_string();
+        assert_eq!(
+            layer_msg,
+            "The file exceeds the 50.00 MB limit; please upload a file smaller than 50.00 MB"
+        );
+    });
+}
+
+#[test]
+fn english_requests_localize_quota_exhaustion() {
+    run(async {
+        let app = test_app().await;
+        let png = gradient_png(24, 24);
+        for _ in 0..5 {
+            app.upload_ok("tiny.png", &png, None).await;
+        }
+
+        let en = app.upload_with_language("tiny.png", &png, "en-US").await;
+        assert_eq!(en.status, StatusCode::TOO_MANY_REQUESTS);
+        let body = en.json();
+        assert_eq!(body["code"], 4003);
+        let msg = body["msg"].as_str().unwrap();
+        assert!(
+            msg.contains("used up") && msg.contains("resets at"),
+            "{msg}"
+        );
+        assert!(body["data"]["resets_at"].as_str().is_some());
+
+        let zh = app.upload_with_language("tiny.png", &png, "zh-CN").await;
+        assert_eq!(zh.status, StatusCode::TOO_MANY_REQUESTS);
+        let zh_msg = zh.json()["msg"].as_str().unwrap().to_string();
+        assert!(zh_msg.contains("本期额度已用完"), "{zh_msg}");
+    });
+}
+
+#[test]
+fn english_requests_localize_rate_limiting() {
+    run(async {
+        let app = test_app().await;
+        let email = unique_email();
+        for _ in 0..3 {
+            let sent = app
+                .post_json_with_language(
+                    "/v1/auth/otp",
+                    serde_json::json!({ "email": email }),
+                    "en",
+                )
+                .await;
+            assert_eq!(
+                sent.status,
+                StatusCode::OK,
+                "{}",
+                String::from_utf8_lossy(&sent.body)
+            );
+        }
+
+        let en = app
+            .post_json_with_language(
+                "/v1/auth/otp",
+                serde_json::json!({ "email": email }),
+                "en-US,en;q=0.9",
+            )
+            .await;
+        assert_eq!(en.status, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(en.json()["code"], 4003);
+        assert_eq!(
+            en.json()["msg"],
+            "Too many verification code requests, please try again later"
+        );
+
+        let zh = app
+            .post_json_with_language(
+                "/v1/auth/otp",
+                serde_json::json!({ "email": email }),
+                "zh-CN",
+            )
+            .await;
+        assert_eq!(zh.status, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(zh.json()["msg"], "验证码发送过于频繁，请稍后再试");
+    });
+}
+
+#[test]
+fn english_requests_localize_validation_auth_and_lookup_errors() {
+    run(async {
+        let app = test_app().await;
+        let png = gradient_png(32, 32);
+
+        let en_validation = app
+            .upload_with_fields_and_language("a.png", &png, &[("convert", "gif")], "en")
+            .await;
+        assert_eq!(en_validation.status, StatusCode::BAD_REQUEST);
+        assert_eq!(en_validation.json()["code"], 1001);
+        assert_eq!(
+            en_validation.json()["msg"],
+            "convert only supports png, jpeg, webp and avif"
+        );
+
+        let zh_validation = app
+            .upload_with_fields_and_language("a.png", &png, &[("convert", "gif")], "zh-CN")
+            .await;
+        assert_eq!(
+            zh_validation.json()["msg"],
+            "convert 只支持 png、jpeg、webp、avif"
+        );
+
+        let en_auth = app.get_with_language("/v1/me/api-keys", "en").await;
+        assert_eq!(en_auth.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(en_auth.json()["msg"], "Please sign in first");
+
+        let zh_auth = app.get_with_language("/v1/me/api-keys", "zh-CN").await;
+        assert_eq!(zh_auth.json()["msg"], "请先登录");
+
+        let en_key = app
+            .send_with_language(
+                Method::GET,
+                "/v1/me",
+                None,
+                Body::empty(),
+                Some("nonsense"),
+                Some("en"),
+            )
+            .await;
+        assert_eq!(en_key.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(en_key.json()["msg"], "Invalid API key");
+
+        let en_revoked = app
+            .send_with_language(
+                Method::GET,
+                "/v1/me",
+                None,
+                Body::empty(),
+                Some("lp_live_bogus"),
+                Some("en"),
+            )
+            .await;
+        assert_eq!(en_revoked.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(en_revoked.json()["msg"], "Invalid or revoked API key");
+
+        let en_task = app
+            .get_with_language("/v1/images/compress/not-a-uuid", "en")
+            .await;
+        assert_eq!(en_task.status, StatusCode::NOT_FOUND);
+        assert_eq!(en_task.json()["msg"], "Task not found");
+
+        let zh_task = app
+            .get_with_language("/v1/images/compress/not-a-uuid", "zh-CN")
+            .await;
+        assert_eq!(zh_task.json()["msg"], "任务不存在");
+
+        let en_unknown = app.get_with_language("/v1/no-such-endpoint", "en").await;
+        assert_eq!(en_unknown.status, StatusCode::NOT_FOUND);
+        assert_eq!(en_unknown.json()["msg"], "Endpoint not found");
+    });
+}
+
+#[test]
+fn verification_email_follows_request_language() {
+    run(async {
+        let app = test_app().await;
+
+        let email_en = unique_email();
+        let sent_en = app
+            .post_json_with_language(
+                "/v1/auth/otp",
+                serde_json::json!({ "email": email_en }),
+                "en-US,en;q=0.9",
+            )
+            .await;
+        assert_eq!(sent_en.status, StatusCode::OK);
+        assert_eq!(app.mailer.last_lang_for(&email_en), Lang::En);
+        let (subject_en, body_en) = app.mailer.last_email_for(&email_en);
+        assert!(
+            subject_en.contains("is your LubanPNG login code"),
+            "{subject_en}"
+        );
+        assert!(body_en.contains("Your LubanPNG login code is"), "{body_en}");
+        assert!(body_en.contains("If you didn't request this"), "{body_en}");
+
+        let email_zh = unique_email();
+        let sent_zh = app
+            .post_json_with_language(
+                "/v1/auth/otp",
+                serde_json::json!({ "email": email_zh }),
+                "zh-CN",
+            )
+            .await;
+        assert_eq!(sent_zh.status, StatusCode::OK);
+        assert_eq!(app.mailer.last_lang_for(&email_zh), Lang::Zh);
+        let (subject_zh, body_zh) = app.mailer.last_email_for(&email_zh);
+        assert!(
+            subject_zh.contains("是你的 LubanPNG 登录验证码"),
+            "{subject_zh}"
+        );
+        assert!(body_zh.contains("你的 LubanPNG 登录验证码是"), "{body_zh}");
+
+        let email_default = unique_email();
+        let sent_default = app
+            .post_json(
+                "/v1/auth/otp",
+                serde_json::json!({ "email": email_default }),
+            )
+            .await;
+        assert_eq!(sent_default.status, StatusCode::OK);
+        assert_eq!(app.mailer.last_lang_for(&email_default), Lang::Zh);
     });
 }
 

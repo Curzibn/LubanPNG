@@ -53,6 +53,7 @@ pub struct TaskRecord {
     pub quota_units: i16,
     pub target_format: Option<String>,
     pub background: Option<String>,
+    pub lang: String,
     pub locked_by: Option<String>,
     pub locked_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,

@@ -1,3 +1,4 @@
+use crate::i18n::{Lang, Msg};
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -8,68 +9,128 @@ use std::fmt;
 
 #[derive(Debug)]
 pub enum AppError {
-    Validation(String),
-    FileTooLarge { size: u64, max_size: u64 },
-    NotFound(String),
-    Unauthorized(String),
-    Forbidden(String),
-    QuotaExceeded { resets_at: DateTime<Utc> },
-    RateLimited(String),
-    Unavailable(String),
+    Validation {
+        message: Msg,
+        lang: Lang,
+    },
+    FileTooLarge {
+        size: u64,
+        max_size: u64,
+        lang: Lang,
+    },
+    NotFound {
+        message: Msg,
+        lang: Lang,
+    },
+    Unauthorized {
+        message: Msg,
+        lang: Lang,
+    },
+    Forbidden {
+        message: Msg,
+        lang: Lang,
+    },
+    QuotaExceeded {
+        resets_at: DateTime<Utc>,
+        lang: Lang,
+    },
+    RateLimited {
+        message: Msg,
+        lang: Lang,
+    },
+    Unavailable {
+        message: Msg,
+        lang: Lang,
+    },
     Internal(String),
-    Compression(String),
+    Compression {
+        detail: String,
+        lang: Lang,
+    },
     Config(String),
 }
 
 impl AppError {
-    pub fn validation(msg: impl Into<String>) -> Self {
-        Self::Validation(msg.into())
+    pub fn validation(message: Msg, lang: Lang) -> Self {
+        Self::Validation { message, lang }
     }
 
-    pub fn file_too_large(size: u64, max_size: u64) -> Self {
-        Self::FileTooLarge { size, max_size }
+    pub fn file_too_large(size: u64, max_size: u64, lang: Lang) -> Self {
+        Self::FileTooLarge {
+            size,
+            max_size,
+            lang,
+        }
     }
 
-    pub fn not_found(msg: impl Into<String>) -> Self {
-        Self::NotFound(msg.into())
+    pub fn not_found(message: Msg, lang: Lang) -> Self {
+        Self::NotFound { message, lang }
     }
 
-    pub fn unauthorized(msg: impl Into<String>) -> Self {
-        Self::Unauthorized(msg.into())
+    pub fn unauthorized(message: Msg, lang: Lang) -> Self {
+        Self::Unauthorized { message, lang }
     }
 
-    pub fn forbidden(msg: impl Into<String>) -> Self {
-        Self::Forbidden(msg.into())
+    pub fn forbidden(message: Msg, lang: Lang) -> Self {
+        Self::Forbidden { message, lang }
     }
 
-    pub fn rate_limited(msg: impl Into<String>) -> Self {
-        Self::RateLimited(msg.into())
+    pub fn quota_exceeded(resets_at: DateTime<Utc>, lang: Lang) -> Self {
+        Self::QuotaExceeded { resets_at, lang }
     }
 
-    pub fn unavailable(msg: impl Into<String>) -> Self {
-        Self::Unavailable(msg.into())
+    pub fn rate_limited(message: Msg, lang: Lang) -> Self {
+        Self::RateLimited { message, lang }
+    }
+
+    pub fn unavailable(message: Msg, lang: Lang) -> Self {
+        Self::Unavailable { message, lang }
     }
 
     pub fn internal(msg: impl Into<String>) -> Self {
         Self::Internal(msg.into())
     }
 
-    pub fn compression(msg: impl Into<String>) -> Self {
-        Self::Compression(msg.into())
+    pub fn compression(detail: impl Into<String>) -> Self {
+        Self::Compression {
+            detail: detail.into(),
+            lang: Lang::default(),
+        }
+    }
+
+    pub fn with_lang(self, lang: Lang) -> Self {
+        match self {
+            AppError::Validation { message, .. } => AppError::Validation { message, lang },
+            AppError::FileTooLarge { size, max_size, .. } => AppError::FileTooLarge {
+                size,
+                max_size,
+                lang,
+            },
+            AppError::NotFound { message, .. } => AppError::NotFound { message, lang },
+            AppError::Unauthorized { message, .. } => AppError::Unauthorized { message, lang },
+            AppError::Forbidden { message, .. } => AppError::Forbidden { message, lang },
+            AppError::QuotaExceeded { resets_at, .. } => {
+                AppError::QuotaExceeded { resets_at, lang }
+            }
+            AppError::RateLimited { message, .. } => AppError::RateLimited { message, lang },
+            AppError::Unavailable { message, .. } => AppError::Unavailable { message, lang },
+            AppError::Compression { detail, .. } => AppError::Compression { detail, lang },
+            other => other,
+        }
     }
 
     pub fn status_code(&self) -> StatusCode {
         match self {
-            AppError::Validation(_) => StatusCode::BAD_REQUEST,
+            AppError::Validation { .. } => StatusCode::BAD_REQUEST,
             AppError::FileTooLarge { .. } => StatusCode::PAYLOAD_TOO_LARGE,
-            AppError::NotFound(_) => StatusCode::NOT_FOUND,
-            AppError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
-            AppError::Forbidden(_) => StatusCode::FORBIDDEN,
-            AppError::QuotaExceeded { .. } | AppError::RateLimited(_) => {
+            AppError::NotFound { .. } => StatusCode::NOT_FOUND,
+            AppError::Unauthorized { .. } => StatusCode::UNAUTHORIZED,
+            AppError::Forbidden { .. } => StatusCode::FORBIDDEN,
+            AppError::QuotaExceeded { .. } | AppError::RateLimited { .. } => {
                 StatusCode::TOO_MANY_REQUESTS
             }
-            AppError::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
-            AppError::Internal(_) | AppError::Compression(_) | AppError::Config(_) => {
+            AppError::Unavailable { .. } => StatusCode::SERVICE_UNAVAILABLE,
+            AppError::Internal(_) | AppError::Compression { .. } | AppError::Config(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
         }
@@ -78,54 +139,60 @@ impl AppError {
     pub fn error_code(&self) -> i32 {
         use crate::response::codes;
         match self {
-            AppError::Validation(_) => codes::PARAM_ERROR,
+            AppError::Validation { .. } => codes::PARAM_ERROR,
             AppError::FileTooLarge { .. } => codes::FILE_TOO_LARGE,
-            AppError::NotFound(_) => codes::TASK_NOT_FOUND,
-            AppError::Unauthorized(_) => codes::UNAUTHORIZED,
-            AppError::Forbidden(_) => codes::FORBIDDEN,
-            AppError::QuotaExceeded { .. } | AppError::RateLimited(_) => codes::QUOTA_EXCEEDED,
-            AppError::Unavailable(_) => codes::SERVICE_UNAVAILABLE,
+            AppError::NotFound { .. } => codes::TASK_NOT_FOUND,
+            AppError::Unauthorized { .. } => codes::UNAUTHORIZED,
+            AppError::Forbidden { .. } => codes::FORBIDDEN,
+            AppError::QuotaExceeded { .. } | AppError::RateLimited { .. } => codes::QUOTA_EXCEEDED,
+            AppError::Unavailable { .. } => codes::SERVICE_UNAVAILABLE,
             AppError::Internal(_) => codes::SERVER_ERROR,
-            AppError::Compression(_) => codes::THIRD_PARTY_ERROR,
+            AppError::Compression { .. } => codes::THIRD_PARTY_ERROR,
             AppError::Config(_) => codes::SERVER_ERROR,
         }
     }
 
     pub fn message(&self) -> String {
         match self {
-            AppError::Validation(msg) => msg.clone(),
-            AppError::FileTooLarge { size, max_size } => {
+            AppError::Validation { message, lang } => message.render(*lang),
+            AppError::FileTooLarge {
+                size,
+                max_size,
+                lang,
+            } => {
                 let size_mb = *size as f64 / (1024.0 * 1024.0);
                 let max_size_mb = *max_size as f64 / (1024.0 * 1024.0);
                 if *size == 0 {
-                    format!(
-                        "文件超过最大限制 {:.2} MB，请上传小于 {:.2} MB 的文件",
-                        max_size_mb, max_size_mb
-                    )
+                    Msg::FileTooLargeMissingSize { max_size_mb }.render(*lang)
                 } else {
-                    format!(
-                        "文件大小 {:.2} MB 超过最大限制 {:.2} MB，请上传小于 {:.2} MB 的文件",
-                        size_mb, max_size_mb, max_size_mb
-                    )
+                    Msg::FileTooLarge {
+                        size_mb,
+                        max_size_mb,
+                    }
+                    .render(*lang)
                 }
             }
-            AppError::NotFound(msg) => msg.clone(),
-            AppError::Unauthorized(msg) => msg.clone(),
-            AppError::Forbidden(msg) => msg.clone(),
-            AppError::QuotaExceeded { resets_at } => {
-                format!("本期额度已用完，{} 重置", resets_at.to_rfc3339())
+            AppError::NotFound { message, lang } => message.render(*lang),
+            AppError::Unauthorized { message, lang } => message.render(*lang),
+            AppError::Forbidden { message, lang } => message.render(*lang),
+            AppError::QuotaExceeded { resets_at, lang } => Msg::QuotaExceeded {
+                resets_at: resets_at.to_rfc3339(),
             }
-            AppError::RateLimited(msg) => msg.clone(),
-            AppError::Unavailable(msg) => msg.clone(),
+            .render(*lang),
+            AppError::RateLimited { message, lang } => message.render(*lang),
+            AppError::Unavailable { message, lang } => message.render(*lang),
             AppError::Internal(msg) => format!("内部错误: {}", msg),
-            AppError::Compression(msg) => format!("压缩失败: {}", msg),
+            AppError::Compression { detail, lang } => Msg::CompressionFailed {
+                detail: detail.clone(),
+            }
+            .render(*lang),
             AppError::Config(msg) => format!("配置错误: {}", msg),
         }
     }
 
     fn data(&self) -> Option<serde_json::Value> {
         match self {
-            AppError::QuotaExceeded { resets_at } => Some(serde_json::json!({
+            AppError::QuotaExceeded { resets_at, .. } => Some(serde_json::json!({
                 "resets_at": resets_at.to_rfc3339(),
                 "remaining": 0,
             })),
@@ -195,3 +262,45 @@ impl fmt::Display for AppError {
 }
 
 pub type AppResult<T> = Result<T, AppError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_too_large_messages_follow_language() {
+        let zh = AppError::file_too_large(6 * 1024 * 1024, 5 * 1024 * 1024, Lang::Zh).message();
+        assert_eq!(
+            zh,
+            "文件大小 6.00 MB 超过最大限制 5.00 MB，请上传小于 5.00 MB 的文件"
+        );
+        let en = AppError::file_too_large(6 * 1024 * 1024, 5 * 1024 * 1024, Lang::En).message();
+        assert_eq!(
+            en,
+            "The file is 6.00 MB, over the 5.00 MB limit; please upload a file smaller than 5.00 MB"
+        );
+        let unknown = AppError::file_too_large(0, 50 * 1024 * 1024, Lang::En).message();
+        assert!(unknown.contains("The file exceeds the 50.00 MB limit"));
+    }
+
+    #[test]
+    fn with_lang_relocalizes_user_facing_variants_only() {
+        let resets_at = DateTime::parse_from_rfc3339("2026-10-01T00:00:00+08:00")
+            .unwrap()
+            .with_timezone(&Utc);
+        let en = AppError::quota_exceeded(resets_at, Lang::Zh)
+            .with_lang(Lang::En)
+            .message();
+        assert!(en.contains("resets at 2026-09-30T16:00:00+00:00"), "{en}");
+
+        let internal = AppError::internal("数据库错误: boom")
+            .with_lang(Lang::En)
+            .message();
+        assert_eq!(internal, "内部错误: 数据库错误: boom");
+
+        let compression = AppError::compression("GIF 编码失败: boom")
+            .with_lang(Lang::En)
+            .message();
+        assert_eq!(compression, "Compression failed: GIF 编码失败: boom");
+    }
+}

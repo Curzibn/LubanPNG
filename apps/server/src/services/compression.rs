@@ -3,6 +3,7 @@ use crate::domain::compression::ConversionRequest;
 use crate::domain::subject::{Plan, Subject, SubjectKind};
 use crate::domain::task::{TaskRecord, TaskStatus};
 use crate::error::{AppError, AppResult};
+use crate::i18n::{Lang, Msg};
 use crate::infrastructure::compression::convert::convert_image;
 use crate::infrastructure::compression::probe;
 use crate::infrastructure::compression::CompressionStrategy;
@@ -66,10 +67,7 @@ pub struct CompressionService {
     config: AppConfig,
 }
 
-pub const SUPPORTED_FORMATS_MESSAGE: &str = "只支持 PNG、JPEG、GIF、WebP、AVIF 图片";
-pub const HEIF_MESSAGE: &str = "暂不支持 HEIC/HEIF，请先在设备上导出为 JPEG 再上传";
-
-fn detect_format(data: &[u8]) -> AppResult<ImageFormat> {
+fn detect_format(data: &[u8], lang: Lang) -> AppResult<ImageFormat> {
     match probe::sniff_format(data) {
         Some(
             format @ (ImageFormat::Png
@@ -78,8 +76,8 @@ fn detect_format(data: &[u8]) -> AppResult<ImageFormat> {
             | ImageFormat::WebP
             | ImageFormat::Avif),
         ) => Ok(format),
-        _ if probe::is_heif(data) => Err(AppError::validation(HEIF_MESSAGE)),
-        _ => Err(AppError::validation(SUPPORTED_FORMATS_MESSAGE)),
+        _ if probe::is_heif(data) => Err(AppError::validation(Msg::HeifUnsupported, lang)),
+        _ => Err(AppError::validation(Msg::UnsupportedFormats, lang)),
     }
 }
 
@@ -136,23 +134,25 @@ impl CompressionService {
         data: Bytes,
         filename: &str,
         conversion: Option<ConversionRequest>,
+        lang: Lang,
     ) -> AppResult<TaskRecord> {
         let size = data.len() as i64;
         if size == 0 {
-            return Err(AppError::validation("文件不能为空"));
+            return Err(AppError::validation(Msg::FileEmpty, lang));
         }
         if size > subject.plan.max_file_size {
             return Err(AppError::file_too_large(
                 size as u64,
                 subject.plan.max_file_size as u64,
+                lang,
             ));
         }
-        let format = detect_format(&data)?;
+        let format = detect_format(&data, lang)?;
         let conversion = effective_conversion(format, conversion);
         let units = 1 + i32::from(conversion.is_some());
         let extension = format_extension(format);
         let task_id = Uuid::new_v4();
-        let snapshot = self.quota.reserve(subject, task_id, units).await?;
+        let snapshot = self.quota.reserve(subject, task_id, units, lang).await?;
         let input_key = format!("uploads/{}{}", task_id, extension);
         let subject_type = subject.kind.as_str();
         if let Err(err) = self
@@ -192,6 +192,7 @@ impl CompressionService {
                 background: conversion
                     .and_then(|request| request.background)
                     .map(|background| background.to_hex()),
+                lang: lang.as_str().to_string(),
             })
             .await;
         match created {
@@ -249,14 +250,22 @@ impl CompressionService {
         })
     }
 
-    pub async fn status(&self, task_id: Uuid, wait: StdDuration) -> AppResult<TaskStatusView> {
+    pub async fn status(
+        &self,
+        task_id: Uuid,
+        wait: StdDuration,
+        lang: Lang,
+    ) -> AppResult<TaskStatusView> {
         let deadline = tokio::time::Instant::now() + wait;
         loop {
-            let task = self
-                .tasks
-                .get(task_id)
-                .await?
-                .ok_or_else(|| AppError::not_found(format!("任务不存在: {}", task_id)))?;
+            let task = self.tasks.get(task_id).await?.ok_or_else(|| {
+                AppError::not_found(
+                    Msg::TaskNotFoundWithId {
+                        id: task_id.to_string(),
+                    },
+                    lang,
+                )
+            })?;
             if task.is_terminal() || tokio::time::Instant::now() >= deadline {
                 return self.view(task).await;
             }
@@ -276,12 +285,12 @@ impl CompressionService {
         Ok(views)
     }
 
-    pub async fn download_url(&self, filename: &str) -> AppResult<String> {
+    pub async fn download_url(&self, filename: &str, lang: Lang) -> AppResult<String> {
         let task_id = filename
             .split_once('.')
             .map(|(stem, _)| stem)
             .and_then(|stem| Uuid::parse_str(stem).ok())
-            .ok_or_else(|| AppError::not_found("文件不存在"))?;
+            .ok_or_else(|| AppError::not_found(Msg::FileNotFound, lang))?;
         let task = self
             .tasks
             .get(task_id)
@@ -290,10 +299,10 @@ impl CompressionService {
                 task.downloadable(Utc::now())
                     && task.download_filename().as_deref() == Some(filename)
             })
-            .ok_or_else(|| AppError::not_found("文件不存在或已过期"))?;
+            .ok_or_else(|| AppError::not_found(Msg::FileNotFoundOrExpired, lang))?;
         let key = task
             .output_key
-            .ok_or_else(|| AppError::not_found("文件不存在"))?;
+            .ok_or_else(|| AppError::not_found(Msg::FileNotFound, lang))?;
         self.storage
             .presigned_get_url(
                 &key,
@@ -319,8 +328,9 @@ impl CompressionService {
     }
 
     async fn run(&self, task: &TaskRecord) -> AppResult<()> {
+        let lang = Lang::from_stored(&task.lang);
         let input = self.storage.get(&task.input_key).await?;
-        let format = detect_format(&input)?;
+        let format = detect_format(&input, lang)?;
         let conversion = effective_conversion(format, task.conversion());
         let strategy = self.strategy(format)?;
         let config = self.config.clone();
@@ -389,7 +399,9 @@ impl CompressionService {
     }
 
     pub async fn process(&self, task: TaskRecord) {
+        let lang = Lang::from_stored(&task.lang);
         if let Err(err) = self.run(&task).await {
+            let err = err.with_lang(lang);
             tracing::warn!(task_id = %task.id, error = %err, "compression task failed");
             if let Err(update_err) = self.tasks.fail(task.id, &err.message()).await {
                 tracing::error!(task_id = %task.id, error = %update_err, "failed to mark task failed");

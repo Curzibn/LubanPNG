@@ -1,6 +1,7 @@
 use crate::config::AppConfig;
 use crate::domain::compression::{Background, CompressionResult, ConversionRequest, OutputFormat};
 use crate::error::{AppError, AppResult};
+use crate::i18n::{Lang, Msg};
 use crate::infrastructure::compression::avif::encode_avif_smart;
 use crate::infrastructure::compression::jpeg::encode_jpeg_smart;
 use crate::infrastructure::compression::jpeg_smart::decide_compression_strategy;
@@ -32,7 +33,10 @@ pub fn convert_image(
     config: &AppConfig,
 ) -> AppResult<CompressionResult> {
     if probe::is_animated(input, source) {
-        return Err(AppError::validation("动图暂不支持格式转换，请保持原格式压缩"));
+        return Err(AppError::validation(
+            Msg::AnimatedConversionUnsupported,
+            Lang::default(),
+        ));
     }
     let decoded = image::load_from_memory(input)?;
     let data = match request.target {
@@ -40,7 +44,7 @@ pub fn convert_image(
             let mut rgba = decoded.to_rgba8();
             if has_transparency(&rgba) {
                 let background = request.background.ok_or_else(|| {
-                    AppError::validation("透明图转 JPEG 需要指定背景色 background，例如 #ffffff")
+                    AppError::validation(Msg::BackgroundRequired, Lang::default())
                 })?;
                 flatten(&mut rgba, background);
             }
@@ -124,7 +128,16 @@ mod tests {
             },
             &config,
         );
-        assert!(matches!(missing, Err(AppError::Validation(_))));
+        match missing {
+            Err(err) => {
+                assert!(matches!(err, AppError::Validation { .. }));
+                assert!(err
+                    .with_lang(Lang::En)
+                    .message()
+                    .contains("requires a background color"));
+            }
+            Ok(_) => panic!("transparent to jpeg without background should fail"),
+        }
         let flattened = convert_image(
             &png,
             ImageFormat::Png,
@@ -153,6 +166,15 @@ mod tests {
             },
             &AppConfig::default(),
         );
-        assert!(matches!(result, Err(AppError::Validation(_))));
+        match result {
+            Err(err) => {
+                assert!(matches!(err, AppError::Validation { .. }));
+                assert!(err
+                    .with_lang(Lang::En)
+                    .message()
+                    .contains("Animated images cannot be converted"));
+            }
+            Ok(_) => panic!("animated conversion should be refused"),
+        }
     }
 }

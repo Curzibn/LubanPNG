@@ -1,6 +1,7 @@
 use crate::config::{AuthConfig, LimitsConfig};
 use crate::domain::subject::{Plan, Source, Subject, SubjectKind};
 use crate::error::{AppError, AppResult};
+use crate::i18n::{Lang, Msg};
 use crate::infrastructure::mail::Mailer;
 use crate::repositories::identity_repository::{AccountRow, ApiKeyRow, IdentityRepository};
 use crate::repositories::rate_limit_repository::RateLimitRepository;
@@ -73,7 +74,7 @@ fn random_key_body(len: usize) -> String {
     out
 }
 
-pub fn normalize_email(raw: &str) -> AppResult<String> {
+pub fn normalize_email(raw: &str, lang: Lang) -> AppResult<String> {
     let email = raw.trim().to_ascii_lowercase();
     let valid = email.len() <= 254
         && email.split_once('@').map(|(local, domain)| {
@@ -86,7 +87,7 @@ pub fn normalize_email(raw: &str) -> AppResult<String> {
     if valid {
         Ok(email)
     } else {
-        Err(AppError::validation("邮箱地址无效"))
+        Err(AppError::validation(Msg::InvalidEmail, lang))
     }
 }
 
@@ -198,7 +199,7 @@ impl AuthService {
         }
     }
 
-    pub async fn resolve(&self, headers: &HeaderMap) -> AppResult<Resolution> {
+    pub async fn resolve(&self, headers: &HeaderMap, lang: Lang) -> AppResult<Resolution> {
         if let Some(bearer) = headers
             .get(AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
@@ -206,13 +207,13 @@ impl AuthService {
         {
             let token = bearer.trim();
             if !token.starts_with(API_KEY_PREFIX) {
-                return Err(AppError::unauthorized("API Key 无效"));
+                return Err(AppError::unauthorized(Msg::ApiKeyInvalid, lang));
             }
             let account = self
                 .identity
                 .account_by_api_key(&hash_token(token))
                 .await?
-                .ok_or_else(|| AppError::unauthorized("API Key 无效或已吊销"))?;
+                .ok_or_else(|| AppError::unauthorized(Msg::ApiKeyRevoked, lang))?;
             let plan = self.plan(&account.plan_id).await?;
             let source = headers
                 .get(USER_AGENT)
@@ -278,10 +279,15 @@ impl AuthService {
         })
     }
 
-    pub async fn request_code(&self, raw_email: &str, ip: &str) -> AppResult<OtpIssued> {
-        let email = normalize_email(raw_email)?;
+    pub async fn request_code(
+        &self,
+        raw_email: &str,
+        ip: &str,
+        lang: Lang,
+    ) -> AppResult<OtpIssued> {
+        let email = normalize_email(raw_email, lang)?;
         if !self.mailer.enabled() {
-            return Err(AppError::unavailable("邮件服务未配置，暂时无法发送验证码"));
+            return Err(AppError::unavailable(Msg::MailUnavailable, lang));
         }
         let email_ok = self
             .rate_limits
@@ -300,7 +306,7 @@ impl AuthService {
             )
             .await?;
         if !email_ok || !ip_ok {
-            return Err(AppError::rate_limited("验证码发送过于频繁，请稍后再试"));
+            return Err(AppError::rate_limited(Msg::OtpTooFrequent, lang));
         }
         let code = format!("{:06}", rand::random::<u32>() % 1_000_000);
         let expires_at = Utc::now() + Duration::seconds(self.config.otp_ttl_secs);
@@ -308,7 +314,7 @@ impl AuthService {
             .create_otp(&email, &self.otp_hash(&email, &code), expires_at)
             .await?;
         self.mailer
-            .send_login_code(&email, &code, self.otp_ttl_minutes())
+            .send_login_code(&email, &code, self.otp_ttl_minutes(), lang)
             .await?;
         Ok(OtpIssued {
             expires_in: self.config.otp_ttl_secs,
@@ -321,23 +327,24 @@ impl AuthService {
         raw_email: &str,
         code: &str,
         signup: SignupContext,
+        lang: Lang,
     ) -> AppResult<(String, AccountRow, bool)> {
-        let email = normalize_email(raw_email)?;
+        let email = normalize_email(raw_email, lang)?;
         let code = code.trim();
         let otp = self
             .identity
             .latest_otp(&email)
             .await?
             .filter(|otp| otp.expires_at > Utc::now())
-            .ok_or_else(|| AppError::validation("验证码不存在或已过期，请重新获取"))?;
+            .ok_or_else(|| AppError::validation(Msg::OtpExpired, lang))?;
         if otp.attempts >= self.config.otp_max_attempts {
-            return Err(AppError::rate_limited("验证码错误次数过多，请重新获取"));
+            return Err(AppError::rate_limited(Msg::OtpTooManyAttempts, lang));
         }
         let expected = self.otp_hash(&email, code);
         let matches: bool = expected.as_bytes().ct_eq(otp.code_hash.as_bytes()).into();
         if !matches {
             self.identity.record_otp_attempt(otp.id).await?;
-            return Err(AppError::validation("验证码不正确"));
+            return Err(AppError::validation(Msg::OtpIncorrect, lang));
         }
         self.identity.consume_otp(otp.id).await?;
         let (account, created) = self.identity.find_or_create_account(&email).await?;
@@ -364,16 +371,16 @@ impl AuthService {
         Ok(())
     }
 
-    fn require_account(subject: &Subject) -> AppResult<Uuid> {
+    fn require_account(subject: &Subject, lang: Lang) -> AppResult<Uuid> {
         if subject.is_account() {
             Ok(subject.id)
         } else {
-            Err(AppError::unauthorized("请先登录"))
+            Err(AppError::unauthorized(Msg::LoginRequired, lang))
         }
     }
 
-    pub async fn list_api_keys(&self, subject: &Subject) -> AppResult<Vec<ApiKeyRow>> {
-        let account_id = Self::require_account(subject)?;
+    pub async fn list_api_keys(&self, subject: &Subject, lang: Lang) -> AppResult<Vec<ApiKeyRow>> {
+        let account_id = Self::require_account(subject, lang)?;
         self.identity.active_api_keys(account_id).await
     }
 
@@ -381,18 +388,21 @@ impl AuthService {
         &self,
         subject: &Subject,
         name: &str,
+        lang: Lang,
     ) -> AppResult<(ApiKeyRow, String)> {
-        let account_id = Self::require_account(subject)?;
+        let account_id = Self::require_account(subject, lang)?;
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 40 {
-            return Err(AppError::validation("Key 名称需为 1 到 40 个字符"));
+            return Err(AppError::validation(Msg::KeyNameInvalid, lang));
         }
         let active = self.identity.active_api_keys(account_id).await?;
         if active.len() as i32 >= subject.plan.max_api_keys {
-            return Err(AppError::validation(format!(
-                "当前套餐最多 {} 个可用 Key，吊销后可再新建",
-                subject.plan.max_api_keys
-            )));
+            return Err(AppError::validation(
+                Msg::KeyLimitReached {
+                    max: subject.plan.max_api_keys,
+                },
+                lang,
+            ));
         }
         let key = format!("{}{}", API_KEY_PREFIX, random_key_body(32));
         let prefix = key[..API_KEY_PREFIX.len() + 4].to_string();
@@ -404,12 +414,12 @@ impl AuthService {
         Ok((row, key))
     }
 
-    pub async fn revoke_api_key(&self, subject: &Subject, id: Uuid) -> AppResult<()> {
-        let account_id = Self::require_account(subject)?;
+    pub async fn revoke_api_key(&self, subject: &Subject, id: Uuid, lang: Lang) -> AppResult<()> {
+        let account_id = Self::require_account(subject, lang)?;
         if self.identity.revoke_api_key(account_id, id).await? {
             Ok(())
         } else {
-            Err(AppError::not_found("Key 不存在或已吊销"))
+            Err(AppError::not_found(Msg::KeyMissingOrRevoked, lang))
         }
     }
 }
@@ -417,19 +427,32 @@ impl AuthService {
 #[cfg(test)]
 mod tests {
     use super::normalize_email;
+    use crate::i18n::Lang;
 
     #[test]
     fn normalizes_case_and_whitespace() {
         assert_eq!(
-            normalize_email("  Zibin@Example.com ").unwrap(),
+            normalize_email("  Zibin@Example.com ", Lang::Zh).unwrap(),
             "zibin@example.com"
         );
     }
 
     #[test]
     fn rejects_malformed_addresses() {
-        assert!(normalize_email("not-an-email").is_err());
-        assert!(normalize_email("a@b").is_err());
-        assert!(normalize_email("a b@example.com").is_err());
+        assert!(normalize_email("not-an-email", Lang::Zh).is_err());
+        assert!(normalize_email("a@b", Lang::Zh).is_err());
+        assert!(normalize_email("a b@example.com", Lang::Zh).is_err());
+    }
+
+    #[test]
+    fn invalid_email_error_follows_language() {
+        let zh = normalize_email("not-an-email", Lang::Zh)
+            .unwrap_err()
+            .message();
+        assert_eq!(zh, "邮箱地址无效");
+        let en = normalize_email("not-an-email", Lang::En)
+            .unwrap_err()
+            .message();
+        assert_eq!(en, "Invalid email address");
     }
 }

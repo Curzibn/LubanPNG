@@ -2,6 +2,7 @@ use crate::app::AppState;
 use crate::domain::subject::SubjectKind;
 use crate::error::AppError;
 use crate::handlers::extract::ClientMeta;
+use crate::i18n::Lang;
 use crate::response::{ApiResponse, ApiResponseError};
 use crate::services::auth::SignupContext;
 use axum::extract::State;
@@ -65,9 +66,10 @@ pub struct OkResponse {
 pub async fn request_otp(
     State(state): State<Arc<AppState>>,
     Extension(meta): Extension<ClientMeta>,
+    Extension(lang): Extension<Lang>,
     Json(body): Json<OtpRequest>,
 ) -> Result<Json<ApiResponse<OtpResponse>>, AppError> {
-    let issued = state.auth.request_code(&body.email, &meta.ip).await?;
+    let issued = state.auth.request_code(&body.email, &meta.ip, lang).await?;
     Ok(Json(ApiResponse::success(OtpResponse {
         sent: true,
         expires_in: issued.expires_in,
@@ -90,6 +92,7 @@ pub async fn verify_otp(
     State(state): State<Arc<AppState>>,
     Extension(subject): Extension<crate::domain::subject::Subject>,
     Extension(meta): Extension<ClientMeta>,
+    Extension(lang): Extension<Lang>,
     Json(body): Json<VerifyRequest>,
 ) -> Result<Response, AppError> {
     let signup = SignupContext {
@@ -106,7 +109,7 @@ pub async fn verify_otp(
     };
     let (token, account, created) = state
         .auth
-        .verify_code(&body.email, &body.code, signup)
+        .verify_code(&body.email, &body.code, signup, lang)
         .await?;
     let response = ApiResponse::success(VerifyResponse {
         email: account.email,

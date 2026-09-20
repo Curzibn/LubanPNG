@@ -3,6 +3,7 @@ use crate::domain::subject::Subject;
 use crate::error::AppError;
 use crate::handlers::auth::OkResponse;
 use crate::handlers::extract::ClientMeta;
+use crate::i18n::{Lang, Msg};
 use crate::repositories::visit_repository::VisitInput;
 use crate::response::{ApiResponse, ApiResponseError};
 use axum::extract::State;
@@ -67,6 +68,7 @@ pub async fn record_visit(
     State(state): State<Arc<AppState>>,
     Extension(subject): Extension<Subject>,
     Extension(meta): Extension<ClientMeta>,
+    Extension(lang): Extension<Lang>,
     headers: HeaderMap,
     Json(body): Json<VisitRequest>,
 ) -> Result<Json<ApiResponse<OkResponse>>, AppError> {
@@ -87,10 +89,11 @@ pub async fn record_visit(
         )
         .await?;
     if !ip_allowed || !device_allowed {
-        return Err(AppError::rate_limited("访问上报过于频繁，请稍后再试"));
+        return Err(AppError::rate_limited(Msg::VisitTooFrequent, lang));
     }
 
-    let path = clean(&body.path, 512).ok_or_else(|| AppError::validation("path 不能为空"))?;
+    let path =
+        clean(&body.path, 512).ok_or_else(|| AppError::validation(Msg::PathRequired, lang))?;
     let referrer_host = clean(body.referrer_host.as_deref().unwrap_or(""), 255);
     let utm_source = clean(body.utm_source.as_deref().unwrap_or(""), 255);
     let utm_medium = clean(body.utm_medium.as_deref().unwrap_or(""), 255);
@@ -129,15 +132,16 @@ pub async fn record_visit(
 pub async fn join_waitlist(
     State(state): State<Arc<AppState>>,
     Extension(subject): Extension<Subject>,
+    Extension(lang): Extension<Lang>,
     Json(body): Json<WaitlistRequest>,
 ) -> Result<Json<ApiResponse<WaitlistView>>, AppError> {
     if !subject.is_account() {
-        return Err(AppError::unauthorized("请先登录"));
+        return Err(AppError::unauthorized(Msg::LoginRequired, lang));
     }
     let plan_id =
-        clean(&body.plan_id, 40).ok_or_else(|| AppError::validation("plan_id 不能为空"))?;
+        clean(&body.plan_id, 40).ok_or_else(|| AppError::validation(Msg::PlanIdRequired, lang))?;
     if !matches!(plan_id.as_str(), "pro" | "metered") {
-        return Err(AppError::validation("plan_id 仅支持 pro 或 metered"));
+        return Err(AppError::validation(Msg::PlanIdInvalid, lang));
     }
     let row = state.waitlist.upsert(subject.id, &plan_id).await?;
     Ok(Json(ApiResponse::success(WaitlistView {

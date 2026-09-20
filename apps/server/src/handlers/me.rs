@@ -2,6 +2,7 @@ use crate::app::AppState;
 use crate::domain::subject::Subject;
 use crate::error::AppError;
 use crate::handlers::auth::OkResponse;
+use crate::i18n::{Lang, Msg};
 use crate::repositories::identity_repository::ApiKeyRow;
 use crate::response::{ApiResponse, ApiResponseError};
 use crate::services::compression::TaskStatusView;
@@ -143,8 +144,9 @@ pub async fn me(
 pub async fn list_api_keys(
     State(state): State<Arc<AppState>>,
     Extension(subject): Extension<Subject>,
+    Extension(lang): Extension<Lang>,
 ) -> Result<Json<ApiResponse<Vec<ApiKeyView>>>, AppError> {
-    let rows = state.auth.list_api_keys(&subject).await?;
+    let rows = state.auth.list_api_keys(&subject, lang).await?;
     Ok(Json(ApiResponse::success(
         rows.iter().map(api_key_view).collect(),
     )))
@@ -164,9 +166,13 @@ pub async fn list_api_keys(
 pub async fn create_api_key(
     State(state): State<Arc<AppState>>,
     Extension(subject): Extension<Subject>,
+    Extension(lang): Extension<Lang>,
     Json(body): Json<CreateApiKeyRequest>,
 ) -> Result<Json<ApiResponse<CreatedApiKeyView>>, AppError> {
-    let (row, key) = state.auth.create_api_key(&subject, &body.name).await?;
+    let (row, key) = state
+        .auth
+        .create_api_key(&subject, &body.name, lang)
+        .await?;
     Ok(Json(ApiResponse::success(CreatedApiKeyView {
         id: row.id.to_string(),
         name: row.name,
@@ -190,10 +196,11 @@ pub async fn create_api_key(
 pub async fn revoke_api_key(
     State(state): State<Arc<AppState>>,
     Extension(subject): Extension<Subject>,
+    Extension(lang): Extension<Lang>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<OkResponse>>, AppError> {
-    let id = Uuid::parse_str(&id).map_err(|_| AppError::not_found("Key 不存在"))?;
-    state.auth.revoke_api_key(&subject, id).await?;
+    let id = Uuid::parse_str(&id).map_err(|_| AppError::not_found(Msg::KeyNotFound, lang))?;
+    state.auth.revoke_api_key(&subject, id, lang).await?;
     Ok(Json(ApiResponse::success(OkResponse { ok: true })))
 }
 

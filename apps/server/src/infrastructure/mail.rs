@@ -1,5 +1,6 @@
 use crate::config::MailConfig;
 use crate::error::{AppError, AppResult};
+use crate::i18n::{login_code_email, Lang, Msg};
 use async_trait::async_trait;
 use lettre::message::header::ContentType;
 use lettre::message::Mailbox;
@@ -9,7 +10,13 @@ use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 #[async_trait]
 pub trait Mailer: Send + Sync {
     fn enabled(&self) -> bool;
-    async fn send_login_code(&self, to: &str, code: &str, ttl_minutes: i64) -> AppResult<()>;
+    async fn send_login_code(
+        &self,
+        to: &str,
+        code: &str,
+        ttl_minutes: i64,
+        lang: Lang,
+    ) -> AppResult<()>;
 }
 
 pub struct SmtpMailer {
@@ -46,25 +53,37 @@ impl Mailer for SmtpMailer {
         true
     }
 
-    async fn send_login_code(&self, to: &str, code: &str, ttl_minutes: i64) -> AppResult<()> {
-        let recipient = to
-            .parse::<Mailbox>()
-            .map_err(|e| AppError::validation(format!("邮箱地址无效: {}", e)))?;
-        let body = format!(
-            "你的 LubanPNG 登录验证码是 {}，{} 分钟内有效。\n\n如果不是你本人操作，忽略这封邮件即可。",
-            code, ttl_minutes
-        );
+    async fn send_login_code(
+        &self,
+        to: &str,
+        code: &str,
+        ttl_minutes: i64,
+        lang: Lang,
+    ) -> AppResult<()> {
+        let recipient = to.parse::<Mailbox>().map_err(|e| {
+            AppError::validation(
+                Msg::InvalidEmailDetail {
+                    detail: e.to_string(),
+                },
+                lang,
+            )
+        })?;
+        let content = login_code_email(lang, code, ttl_minutes);
         let message = Message::builder()
             .from(self.from.clone())
             .to(recipient)
-            .subject(format!("{} 是你的 LubanPNG 登录验证码", code))
+            .subject(content.subject)
             .header(ContentType::TEXT_PLAIN)
-            .body(body)
+            .body(content.body)
             .map_err(|e| AppError::internal(format!("构造邮件失败: {}", e)))?;
-        self.transport
-            .send(message)
-            .await
-            .map_err(|e| AppError::unavailable(format!("邮件发送失败: {}", e)))?;
+        self.transport.send(message).await.map_err(|e| {
+            AppError::unavailable(
+                Msg::MailSendFailed {
+                    detail: e.to_string(),
+                },
+                lang,
+            )
+        })?;
         Ok(())
     }
 }
@@ -77,7 +96,13 @@ impl Mailer for DisabledMailer {
         false
     }
 
-    async fn send_login_code(&self, _to: &str, _code: &str, _ttl_minutes: i64) -> AppResult<()> {
-        Err(AppError::unavailable("邮件服务未配置，暂时无法发送验证码"))
+    async fn send_login_code(
+        &self,
+        _to: &str,
+        _code: &str,
+        _ttl_minutes: i64,
+        lang: Lang,
+    ) -> AppResult<()> {
+        Err(AppError::unavailable(Msg::MailUnavailable, lang))
     }
 }

@@ -1,0 +1,2 @@
+ALTER TABLE tasks
+    ADD COLUMN lang text NOT NULL DEFAULT 'zh';

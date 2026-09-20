@@ -1,5 +1,6 @@
 use crate::app::AppState;
 use crate::error::AppError;
+use crate::i18n::{Lang, Msg};
 use axum::extract::{Request, State};
 use axum::http::header::SET_COOKIE;
 use axum::http::{HeaderMap, HeaderValue, Method};
@@ -41,7 +42,8 @@ pub async fn subject_layer(
     mut request: Request,
     next: Next,
 ) -> Response {
-    let resolution = match state.auth.resolve(request.headers()).await {
+    let lang = Lang::from_headers(request.headers());
+    let resolution = match state.auth.resolve(request.headers(), lang).await {
         Ok(resolution) => resolution,
         Err(err) => return err.into_response(),
     };
@@ -50,7 +52,7 @@ pub async fn subject_layer(
         Method::GET | Method::HEAD | Method::OPTIONS
     );
     if resolution.cookie_based && mutating && !has_request_marker(request.headers()) {
-        return AppError::forbidden("缺少 X-Requested-With 头").into_response();
+        return AppError::forbidden(Msg::MissingRequestMarker, lang).into_response();
     }
     let quota_path = {
         let path = request.uri().path();
@@ -60,6 +62,7 @@ pub async fn subject_layer(
     let ip = client_ip(request.headers());
     request.extensions_mut().insert(subject.clone());
     request.extensions_mut().insert(ClientMeta { ip });
+    request.extensions_mut().insert(lang);
 
     let mut response = next.run(request).await;
 

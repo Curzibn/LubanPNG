@@ -1,5 +1,6 @@
 use crate::app::AppState;
 use crate::error::AppError;
+use crate::i18n::Lang;
 use crate::response::ApiResponseError;
 use axum::extract::{Request, State};
 use axum::http::{header, StatusCode};
@@ -26,9 +27,10 @@ pub async fn handle_body_limit_error(
     request: Request,
     next: Next,
 ) -> Response {
+    let lang = Lang::from_headers(request.headers());
     let response = next.run(request).await;
     if is_body_layer_rejection(&response) {
-        let error = AppError::file_too_large(0, state.config.server.max_upload_size);
+        let error = AppError::file_too_large(0, state.config.server.max_upload_size, lang);
         let error_response = ApiResponseError::error(error.error_code(), error.message());
         return (StatusCode::PAYLOAD_TOO_LARGE, axum::Json(error_response)).into_response();
     }

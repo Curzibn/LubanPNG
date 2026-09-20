@@ -1,6 +1,7 @@
 use crate::config::AppConfig;
 use crate::error::AppError;
 use crate::handlers;
+use crate::i18n::{Lang, Msg};
 use crate::infrastructure::compression::{
     AvifCompressionStrategy, CompressionStrategy, GifCompressionStrategy, JpegCompressionStrategy,
     PngCompressionStrategy, WebpCompressionStrategy,
@@ -20,7 +21,7 @@ use crate::services::compression::CompressionService;
 use crate::services::quota::QuotaService;
 use crate::services::worker;
 use axum::extract::{DefaultBodyLimit, State};
-use axum::http::{header, StatusCode, Uri};
+use axum::http::{header, HeaderMap, StatusCode, Uri};
 use axum::middleware::from_fn_with_state;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get, post};
@@ -38,8 +39,8 @@ use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
 
-async fn unknown_api_path() -> AppError {
-    AppError::not_found("接口不存在")
+async fn unknown_api_path(headers: HeaderMap) -> AppError {
+    AppError::not_found(Msg::EndpointNotFound, Lang::from_headers(&headers))
 }
 
 type SpaIndex = Arc<String>;

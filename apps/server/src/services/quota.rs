@@ -1,5 +1,6 @@
 use crate::domain::subject::{QuotaSnapshot, Subject};
 use crate::error::{AppError, AppResult};
+use crate::i18n::Lang;
 use crate::repositories::quota_repository::{BalanceRow, QuotaRepository};
 use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
 use chrono_tz::Asia::Shanghai;
@@ -69,6 +70,7 @@ impl QuotaService {
         subject: &Subject,
         task_id: Uuid,
         units: i32,
+        lang: Lang,
     ) -> AppResult<QuotaSnapshot> {
         let (period_key, resets_at) = period_for(&subject.plan.period, Utc::now());
         self.repo
@@ -85,7 +87,7 @@ impl QuotaService {
             .await?
         {
             Some(row) => Ok(self.snapshot_from(period_key, resets_at, row)),
-            None => Err(AppError::QuotaExceeded { resets_at }),
+            None => Err(AppError::quota_exceeded(resets_at, lang)),
         }
     }
 

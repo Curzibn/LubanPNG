@@ -1,8 +1,10 @@
 use crate::app::AppState;
 use crate::error::AppError;
+use crate::i18n::Lang;
 use crate::response::ApiResponseError;
 use axum::extract::{Path, State};
 use axum::response::Redirect;
+use axum::Extension;
 use std::sync::Arc;
 
 #[utoipa::path(
@@ -20,8 +22,9 @@ use std::sync::Arc;
 )]
 pub async fn download_file(
     State(state): State<Arc<AppState>>,
+    Extension(lang): Extension<Lang>,
     Path(filename): Path<String>,
 ) -> Result<Redirect, AppError> {
-    let url = state.compression.download_url(&filename).await?;
+    let url = state.compression.download_url(&filename, lang).await?;
     Ok(Redirect::temporary(&url))
 }
