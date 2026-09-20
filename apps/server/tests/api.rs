@@ -1667,18 +1667,49 @@ fn analytics_views_are_queryable_and_consistent() {
                 && view_counts.4 >= 1
         );
 
-        let signup_mismatch: i64 = sqlx::query_scalar(
+        let registration_mismatch: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM analytics.daily_funnel f
-             WHERE f.signups <> (
+             WHERE f.registrations <> (
                  SELECT count(*) FROM accounts a
-                 WHERE a.signup_device_id IS NOT NULL
-                   AND date(a.created_at AT TIME ZONE 'Asia/Shanghai') = f.day
+                 WHERE date(a.created_at AT TIME ZONE 'Asia/Shanghai') = f.day
              )",
         )
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(signup_mismatch, 0);
+        assert_eq!(registration_mismatch, 0);
+
+        let uploader_mismatch: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM analytics.daily_funnel f
+             WHERE f.uploaders <> (
+                 SELECT count(DISTINCT visitor_id) FROM analytics.identity_tasks t
+                 WHERE t.source = 'web' AND t.day = f.day
+             )
+             OR f.attributed_uploaders <> (
+                 SELECT count(DISTINCT t.visitor_id) FROM analytics.identity_tasks t
+                 WHERE t.source = 'web' AND t.day = f.day
+                   AND EXISTS (
+                       SELECT 1 FROM analytics.identity_visits v WHERE v.visitor_id = t.visitor_id
+                   )
+             )",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(uploader_mismatch, 0);
+
+        let counted_mismatch: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM analytics.daily_funnel f
+             WHERE f.counted <> (
+                 SELECT count(*) FROM analytics.identity_tasks t
+                 WHERE t.source = 'web' AND t.day = f.day
+                   AND t.status = 'completed' AND t.compressed_size < t.original_size
+             )",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(counted_mismatch, 0);
 
         let totals: (i64, i64) = sqlx::query_as(
             "SELECT COALESCE(sum(created), 0)::bigint, COALESCE(sum(completed), 0)::bigint
@@ -1760,7 +1791,7 @@ fn visit_user_agent_is_truncated_to_256() {
 }
 
 #[test]
-fn funnel_signups_only_count_device_attributed_accounts() {
+fn funnel_counts_every_registration_regardless_of_device_attribution() {
     run(async {
         let app = test_app().await;
         app.get("/v1/me").await;
@@ -1777,19 +1808,18 @@ fn funnel_signups_only_count_device_attributed_accounts() {
         .await
         .unwrap();
 
-        let (funnel, attributable): (i64, i64) = sqlx::query_as(
+        let (funnel, registrations): (i64, i64) = sqlx::query_as(
             "SELECT COALESCE((
-                 SELECT signups FROM analytics.daily_funnel
+                 SELECT registrations FROM analytics.daily_funnel
                  WHERE day = date(now() AT TIME ZONE 'Asia/Shanghai')
              ), 0),
              (SELECT count(*) FROM accounts
-              WHERE signup_device_id IS NOT NULL
-                AND date(created_at AT TIME ZONE 'Asia/Shanghai') = date(now() AT TIME ZONE 'Asia/Shanghai'))",
+              WHERE date(created_at AT TIME ZONE 'Asia/Shanghai') = date(now() AT TIME ZONE 'Asia/Shanghai'))",
         )
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(funnel, attributable);
+        assert_eq!(funnel, registrations);
         let legacy_present: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM accounts
              WHERE id = $1 AND signup_device_id IS NULL
@@ -1800,6 +1830,131 @@ fn funnel_signups_only_count_device_attributed_accounts() {
         .await
         .unwrap();
         assert_eq!(legacy_present, 1);
+    });
+}
+
+#[test]
+fn visitor_keys_merge_a_signed_up_device_into_its_account() {
+    run(async {
+        let app = test_app().await;
+        app.get("/v1/me").await;
+        let device = device_id(&app);
+        let png = gradient_png(64, 64);
+        let task_id = app.upload_ok("before.png", &png, None).await;
+        let before = app.wait_final(&task_id).await;
+        assert_eq!(before["status"], "completed", "{}", before);
+        app.post_json("/v1/events/visit", serde_json::json!({ "path": "/" }))
+            .await;
+
+        let email = login(&app).await;
+        let pool = db::connect(&test_config().database).await.unwrap();
+        let account: uuid::Uuid = sqlx::query_scalar("SELECT id FROM accounts WHERE email = $1")
+            .bind(&email)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        let (visit_visitor, task_visitor): (uuid::Uuid, uuid::Uuid) = sqlx::query_as(
+            "SELECT (SELECT visitor_id FROM analytics.identity_visits
+                     WHERE subject_type = 'device' AND subject_id = $1),
+                    (SELECT visitor_id FROM analytics.identity_tasks
+                     WHERE subject_type = 'device' AND subject_id = $1)",
+        )
+        .bind(device)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(visit_visitor, account);
+        assert_ne!(visit_visitor, device);
+        assert_eq!(task_visitor, account);
+
+        let stale_device_rows: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM analytics.visitor_keys WHERE visitor_id = $1")
+                .bind(device)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(stale_device_rows, 0);
+
+        let collapsed: i64 = sqlx::query_scalar(
+            "SELECT count(DISTINCT visitor_id) FROM (
+                 SELECT visitor_id FROM analytics.identity_visits
+                 WHERE subject_type = 'device' AND subject_id = $1
+                 UNION ALL
+                 SELECT visitor_id FROM analytics.identity_tasks
+                 WHERE subject_type = 'account' AND subject_id = $2
+             ) AS seen",
+        )
+        .bind(device)
+        .bind(account)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(collapsed, 1, "device and account collapse into one visitor");
+
+        let (device_visits, account_visits): (i64, i64) = sqlx::query_as(
+            "SELECT (SELECT count(*) FROM visits WHERE subject_type = 'device' AND subject_id = $1),
+                    (SELECT count(*) FROM visits WHERE subject_type = 'account' AND subject_id = $2)",
+        )
+        .bind(device)
+        .bind(account)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(device_visits, 1, "raw visits keep the device identity");
+        assert_eq!(account_visits, 0);
+    });
+}
+
+#[test]
+fn traffic_channels_attribute_first_touch_to_the_merged_visitor() {
+    run(async {
+        let app = test_app().await;
+        app.get("/v1/me").await;
+        app.post_json(
+            "/v1/events/visit",
+            serde_json::json!({ "path": "/", "utm_source": "launch", "utm_medium": "post" }),
+        )
+        .await;
+        let png = gradient_png(64, 64);
+        let task_id = app.upload_ok("channel.png", &png, None).await;
+        let data = app.wait_final(&task_id).await;
+        assert_eq!(data["status"], "completed", "{}", data);
+        let email = login(&app).await;
+
+        let pool = db::connect(&test_config().database).await.unwrap();
+        let account: uuid::Uuid = sqlx::query_scalar("SELECT id FROM accounts WHERE email = $1")
+            .bind(&email)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        let channels: Vec<(String, i64, i64, i64)> = sqlx::query_as(
+            "SELECT channel, visitors, uploaders, registrations FROM analytics.traffic_channels
+             WHERE first_day = date(now() AT TIME ZONE 'Asia/Shanghai')",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        let launch = channels
+            .iter()
+            .find(|(channel, ..)| channel == "utm:launch")
+            .unwrap_or_else(|| panic!("utm:launch missing from {channels:?}"));
+        assert_eq!(launch.1, 1, "one visitor on the channel");
+        assert_eq!(launch.2, 1, "the merged uploader counts on the channel");
+        assert_eq!(launch.3, 1, "the registration counts on the channel");
+
+        let listed: uuid::Uuid = sqlx::query_scalar(
+            "SELECT visitor_id FROM analytics.visitor_keys
+             WHERE subject_type = 'device' AND subject_id = (
+                 SELECT signup_device_id FROM accounts WHERE id = $1
+             )",
+        )
+        .bind(account)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(listed, account);
     });
 }
 
