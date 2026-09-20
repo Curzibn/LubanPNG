@@ -20,7 +20,7 @@ TinyPNG-style image compression for PNG / JPEG / GIF / WebP / AVIF. Static image
 
 Online image compression in the spirit of TinyPNG, built on palette quantization and re-encoding: PNG gets quantized then polished losslessly; JPEG has its source quality recovered first, so already-light images are never re-compressed; GIF / APNG / animated WebP are quantized frame by frame with animations intact; WebP and AVIF are re-encoded under an SSIM quality floor.
 
-Because it reuses existing image pipelines instead of resampling blindly, cutting file size by half or more with no visible difference is the normal case, not the best case.
+Each format takes its own path rather than being resampled blindly: JPEG source quality is recovered before re-encoding and low-quality sources are skipped, PNG is quantized to a palette before a lossless pass, and a run whose result is not smaller keeps the original and is not charged. Large wins land where the format allows them — screenshots, photos and transparent PNGs shrink most, while already-optimized files and most animations have little headroom and are left alone rather than re-encoded badly.
 
 ### Quota
 
