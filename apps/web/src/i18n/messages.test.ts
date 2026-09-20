@@ -120,6 +120,15 @@ describe("dictionaries", () => {
       expect(dictionary["home.lede.desktop"]).toMatch(/already-optimized|压过/i)
     }
   })
+
+  it("keeps the English CLI samples in the order the CLI prints", () => {
+    expect(en["teaser.cli.sample"]).toContain("saved 1.72 MB")
+    expect(en["dev.cli.sample"]).toContain("saved 2.11 MB")
+    expect(en["dev.cli.sample"]).toContain("used 7 / 50 this month")
+    expect(en["teaser.cli.sample"]).not.toContain("MB saved")
+    expect(en["dev.cli.sample"]).not.toContain("MB saved")
+    expect(en["dev.cli.sample"]).not.toContain("/ 50 used")
+  })
 })
 
 describe("translate", () => {

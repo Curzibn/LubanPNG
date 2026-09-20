@@ -304,7 +304,7 @@ export const en: Messages = {
     "Files or directories; --out output directory, --in-place overwrite in place, --recursive recurse, --concurrency parallelism, --convert target format (png / jpeg / webp / avif), --background fill colour for transparent images converted to JPEG; on macOS, HEIC is converted to JPEG by the system before upload",
   "dev.cli.usage": "Plan, usage for this period and reset time",
   "dev.cli.sample":
-    "$ lubanpng login\n  Paste your API key: lp_live_…\n  Signed in as zibin@example.com · 46 runs left this month\n\n$ lubanpng compress ./images --out ./dist --recursive\n  photo_banner.jpg   2.40 MB → 0.89 MB   -63%\n  logo@2x.png         312 KB →   96 KB   -69%\n  sticker_wave.gif   1.10 MB → 0.71 MB   -36%\n  3 images, 2.11 MB saved, 43 runs left this month\n\n$ lubanpng compress ./hero.png --convert webp\n  hero.png           1.20 MB → 0.31 MB   -74%   → hero.webp\n  1 image, 0.89 MB saved, 41 runs left this month, 1 converted\n\n$ lubanpng usage\n  Free plan · 7 / 50 used this month · resets Oct 1",
+    "$ lubanpng login\n  Paste your API key: lp_live_…\n  Signed in as zibin@example.com · 46 runs left this month\n\n$ lubanpng compress ./images --out ./dist --recursive\n  photo_banner.jpg   2.40 MB → 0.89 MB   -63%\n  logo@2x.png         312 KB →   96 KB   -69%\n  sticker_wave.gif   1.10 MB → 0.71 MB   -36%\n  3 images, saved 2.11 MB, 43 runs left this month\n\n$ lubanpng compress ./hero.png --convert webp\n  hero.png           1.20 MB → 0.31 MB   -74%   → hero.webp\n  1 image, saved 0.89 MB, 41 runs left this month, 1 converted\n\n$ lubanpng usage\n  Free plan · used 7 / 50 this month · resets Oct 1",
 
   "teaser.api.title": "Three requests to wire it into your pipeline",
   "teaser.api.curlLabel": "curl example",
@@ -313,7 +313,7 @@ export const en: Messages = {
   "teaser.cli.title": "A whole directory, one command",
   "teaser.cli.sampleLabel": "CLI example",
   "teaser.cli.sample":
-    "$ lubanpng login\n$ lubanpng compress ./images --out ./dist\n\n  photo_banner.jpg   2.40 MB → 0.89 MB   -63%\n  logo@2x.png         312 KB →   96 KB   -69%\n  2 images, 1.72 MB saved, 46 runs left this month",
+    "$ lubanpng login\n$ lubanpng compress ./images --out ./dist\n\n  photo_banner.jpg   2.40 MB → 0.89 MB   -63%\n  logo@2x.png         312 KB →   96 KB   -69%\n  2 images, saved 1.72 MB, 46 runs left this month",
 
   "login.step1": "Step 1",
   "login.step2": "Step 2",

@@ -69,6 +69,8 @@ export const startMockServer = async (compressedBytes: Uint8Array): Promise<Mock
     })
 
     const url = new URL(req.url ?? "/", "http://localhost")
+    const english = String(req.headers["accept-language"] ?? "").toLowerCase().startsWith("en")
+    const message = (zh: string, en: string): string => (english ? en : zh)
     const sendJson = (status: number, payload: unknown): void => {
       res.writeHead(status, { "Content-Type": "application/json", ...QUOTA_HEADERS })
       res.end(JSON.stringify(payload))
@@ -77,15 +79,23 @@ export const startMockServer = async (compressedBytes: Uint8Array): Promise<Mock
     const authorization = req.headers.authorization
     if (url.pathname === "/v1/me") {
       if (authorization === "Bearer lp_quota") {
-        sendJson(429, { code: 4003, msg: "本期额度已用完", data: { remaining: 0 } })
+        sendJson(429, {
+          code: 4003,
+          msg: message("本期额度已用完", "Quota used up for this period"),
+          data: { remaining: 0 },
+        })
         return
       }
       if (authorization === "Bearer lp_missing") {
-        sendJson(404, { code: 3003, msg: "任务不存在", data: null })
+        sendJson(404, { code: 3003, msg: message("任务不存在", "Task not found"), data: null })
         return
       }
-      if (authorization !== "Bearer lp_test_key") {
-        sendJson(401, { code: 4001, msg: "API Key 无效或已吊销", data: null })
+      if (authorization !== "Bearer lp_test_key" && authorization !== "Bearer lp_fail") {
+        sendJson(401, {
+          code: 4001,
+          msg: message("API Key 无效或已吊销", "API key is invalid or revoked"),
+          data: null,
+        })
         return
       }
       sendJson(200, meBody)
@@ -99,6 +109,33 @@ export const startMockServer = async (compressedBytes: Uint8Array): Promise<Mock
     }
 
     if (url.pathname.startsWith("/v1/images/compress/")) {
+      if (authorization === "Bearer lp_fail") {
+        sendJson(200, {
+          code: 0,
+          msg: "success",
+          data: {
+            task_id: "task-1",
+            status: "failed",
+            progress: 100,
+            source: "cli",
+            original_name: "photo.png",
+            original_size: ORIGINAL_SIZE,
+            compressed_size: null,
+            compressed_url: null,
+            target_format: null,
+            output_format: null,
+            quota_units: 0,
+            no_gain: true,
+            error_msg: message("压缩失败：解码错误", "compression failed: decoder error"),
+            created_at: 1_760_000_000,
+            completed_at: 1_760_000_001,
+            expires_at: null,
+            queue_position: null,
+            downloadable: false,
+          },
+        })
+        return
+      }
       sendJson(200, {
         code: 0,
         msg: "success",
@@ -132,7 +169,7 @@ export const startMockServer = async (compressedBytes: Uint8Array): Promise<Mock
       return
     }
 
-    sendJson(404, { code: 3003, msg: "接口不存在", data: null })
+    sendJson(404, { code: 3003, msg: message("接口不存在", "Endpoint not found"), data: null })
   })
 
   server.listen(0, "127.0.0.1")

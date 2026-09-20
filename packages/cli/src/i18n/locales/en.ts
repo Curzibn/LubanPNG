@@ -63,6 +63,10 @@ export const en: Messages = {
 
   "formats.supported": "PNG / JPEG / GIF / WebP / AVIF, plus HEIC on macOS",
 
+  "format.sourceSeparator": ", ",
+  "format.conflictItem": "{target} ({sources})",
+  "format.conflictSeparator": "; ",
+
   "row.failed": "  {name}  {original} → failed: {error}",
   "row.noGain": "  {name}  {original} → {compressed}   {note}",
   "row.noteNoGain": "No gain · original kept · not charged",

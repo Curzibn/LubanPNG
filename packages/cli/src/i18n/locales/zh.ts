@@ -61,6 +61,10 @@ export const zh = {
 
   "formats.supported": "PNG / JPEG / GIF / WebP / AVIF，macOS 上另支持 HEIC",
 
+  "format.sourceSeparator": "、",
+  "format.conflictItem": "{target}（{sources}）",
+  "format.conflictSeparator": "；",
+
   "row.failed": "  {name}  {original} → 失败：{error}",
   "row.noGain": "  {name}  {original} → {compressed}   {note}",
   "row.noteNoGain": "无收益，保留原图（不计次）",

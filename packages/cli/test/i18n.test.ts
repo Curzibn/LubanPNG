@@ -1,11 +1,15 @@
-import { describe, expect, it } from "vitest"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { ApiClient } from "../src/api.js"
 import { renderHelp } from "../src/help.js"
 import { messages, resolveLang, translator } from "../src/i18n/messages.js"
 import type { Io } from "../src/io.js"
 import { run } from "../src/run.js"
+import { startMockServer, type MockServer } from "./mockServer.js"
 
-const cjk = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/
+const cjk = /[\u3000-\u303f\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef]/
 
 const placeholders = (template: string): string[] =>
   Array.from(template.matchAll(/\{(\w+)\}/g), (match) => match[1] ?? "").sort()
@@ -63,7 +67,7 @@ describe("dictionaries", () => {
     }
   })
 
-  it("keep Chinese characters out of the English dictionary", () => {
+  it("keep Chinese characters and full-width punctuation out of the English dictionary", () => {
     const offenders = Object.entries(messages.en)
       .filter(([, value]) => cjk.test(value))
       .map(([key]) => key)
@@ -131,5 +135,82 @@ describe("localized output", () => {
     await expect(enClient.me()).rejects.toThrow("Network error — cannot reach the LubanPNG service")
     const zhClient = new ApiClient({ baseUrl: "http://127.0.0.1:1", lang: "zh", fetchImpl: failingFetch })
     await expect(zhClient.me()).rejects.toThrow("网络错误，无法连接 LubanPNG 服务")
+  })
+})
+
+describe("English rendering", () => {
+  let server: MockServer
+  let root: string
+
+  beforeAll(async () => {
+    server = await startMockServer(new Uint8Array([9, 9]))
+    root = await mkdtemp(join(tmpdir(), "lubanpng-i18n-"))
+    await mkdir(join(root, "empty"))
+    await mkdir(join(root, "a"))
+    await mkdir(join(root, "b"))
+    await writeFile(join(root, "a", "photo.png"), new Uint8Array([1, 2, 3, 4]))
+    await writeFile(join(root, "b", "photo.png"), new Uint8Array([1, 2, 3, 4]))
+  })
+
+  afterAll(async () => {
+    await server.close()
+    await rm(root, { recursive: true, force: true })
+  })
+
+  const runEnglish = async (argv: string[], env: NodeJS.ProcessEnv = {}): Promise<string> => {
+    const output: string[] = []
+    await run(argv, { env: { LUBANPNG_API_KEY: "lp_test_key", ...env }, io: collectingIo(output) })
+    return output.join("")
+  }
+
+  it("renders English error paths without CJK or full-width punctuation", async () => {
+    const conflict = await runEnglish([
+      "compress",
+      join(root, "a"),
+      join(root, "b"),
+      "--out",
+      join(root, "dist"),
+      "--recursive",
+      "--api-base",
+      server.baseUrl,
+    ])
+    expect(conflict).toContain("Output path conflict")
+    expect(conflict).not.toMatch(cjk)
+
+    const noImages = await runEnglish([
+      "compress",
+      join(root, "empty"),
+      "--recursive",
+      "--api-base",
+      server.baseUrl,
+    ])
+    expect(noImages).toContain("No compressible images found")
+    expect(noImages).not.toMatch(cjk)
+
+    const missing = await runEnglish(["compress", join(root, "nope.png"), "--api-base", server.baseUrl])
+    expect(missing).toContain("Path does not exist")
+    expect(missing).not.toMatch(cjk)
+
+    const failed = await runEnglish(["compress", join(root, "a", "photo.png"), "--api-base", server.baseUrl], {
+      LUBANPNG_API_KEY: "lp_fail",
+    })
+    expect(failed).toContain("failed: compression failed: decoder error")
+    expect(failed).toContain("1 failed")
+    expect(failed).not.toMatch(cjk)
+  })
+
+  it("renders English usage, login and logout output without CJK", async () => {
+    const usage = await runEnglish(["usage", "--api-base", server.baseUrl])
+    expect(usage).toContain("Free plan · used 7 / 50 this month · resets Oct 1")
+    expect(usage).not.toMatch(cjk)
+
+    const login = await runEnglish(["login", "--api-base", server.baseUrl])
+    expect(login).toContain("LUBANPNG_API_KEY verified · zibin@example.com · 46 runs left this month")
+    expect(login).not.toMatch(cjk)
+
+    const configRoot = join(root, "config")
+    const logout = await runEnglish(["logout"], { XDG_CONFIG_HOME: configRoot, APPDATA: configRoot })
+    expect(logout).toContain("No API key stored on this machine")
+    expect(logout).not.toMatch(cjk)
   })
 })

@@ -143,7 +143,11 @@ const assertNoTargetConflicts = (files: Collected[], options: CompressOptions, l
   }
   const conflicts = [...byTarget.entries()].filter(([, sources]) => sources.length > 1)
   if (conflicts.length === 0) return
-  const detail = conflicts.map(([target, sources]) => `${target}（${sources.join("、")}）`).join("；")
+  const detail = conflicts
+    .map(([target, sources]) =>
+      t("format.conflictItem", { target, sources: sources.join(t("format.sourceSeparator")) }),
+    )
+    .join(t("format.conflictSeparator"))
   throw new UsageError(t("error.outputConflict", { detail }))
 }
 
