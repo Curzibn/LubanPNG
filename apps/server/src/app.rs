@@ -22,7 +22,7 @@ use crate::services::compression::CompressionService;
 use crate::services::quota::QuotaService;
 use crate::services::upscale::UpscaleService;
 use crate::services::worker;
-use crate::shells::{serve_static_shell, ShellTable};
+use crate::shells::{inject_head_extras, serve_static_shell, verification_meta_block, ShellTable};
 use axum::extract::{DefaultBodyLimit, Extension, State};
 use axum::http::{header, HeaderMap, StatusCode, Uri};
 use axum::middleware::from_fn_with_state;
@@ -293,10 +293,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             let llms: LlmsIndex = Arc::new(llms);
             router = router.route("/llms.txt", get(serve_llms).layer(Extension(llms)));
         }
+        let extra_head = verification_meta_block(&state.config.web);
+        let index = inject_head_extras(&index, &extra_head);
         let spa = Router::new()
             .fallback(serve_spa)
             .with_state(Arc::new(index));
-        let shells = Arc::new(ShellTable::load(static_dir));
+        let shells = Arc::new(ShellTable::load(static_dir, &extra_head));
         let web: Router = Router::new()
             .fallback_service(ServeDir::new(static_dir).fallback(spa))
             .layer(from_fn_with_state(shells, serve_static_shell));

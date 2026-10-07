@@ -272,12 +272,18 @@ impl MailConfig {
 #[serde(default)]
 pub struct WebConfig {
     pub static_dir: String,
+    pub google_site_verification: String,
+    pub bing_site_verification: String,
+    pub baidu_site_verification: String,
 }
 
 impl Default for WebConfig {
     fn default() -> Self {
         Self {
             static_dir: "web".to_string(),
+            google_site_verification: String::new(),
+            bing_site_verification: String::new(),
+            baidu_site_verification: String::new(),
         }
     }
 }
@@ -342,5 +348,15 @@ mod tests {
         assert_eq!(config.server.port, 3456);
         assert!(!config.auth.secure_cookies);
         assert_eq!(config.storage.bucket, "lubanpng");
+    }
+
+    #[test]
+    fn site_verification_values_come_from_the_environment() {
+        std::env::set_var("APP_WEB__GOOGLE_SITE_VERIFICATION", "tok-google");
+        std::env::set_var("APP_WEB__BAIDU_SITE_VERIFICATION", "tok-baidu");
+        let config = AppConfig::load().unwrap();
+        assert_eq!(config.web.google_site_verification, "tok-google");
+        assert_eq!(config.web.baidu_site_verification, "tok-baidu");
+        assert_eq!(config.web.bing_site_verification, "");
     }
 }

@@ -71,10 +71,25 @@ fn write_all_shells(root: &Path) {
     }
 }
 
-fn router_with_static(static_dir: &Path) -> Router {
+fn write_not_found_shells(root: &Path) {
+    for lang in ["zh", "en"] {
+        let dir = root.join("shells").join(lang);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("not-found.html"),
+            format!(
+                "<!doctype html><html lang=\"{lang}\"><head><meta name=\"robots\" content=\"noindex\"></head><body data-shell=\"{lang}:not-found\"></body></html>"
+            ),
+        )
+        .unwrap();
+    }
+}
+
+fn router_with_static_and(static_dir: &Path, configure: impl FnOnce(&mut AppConfig)) -> Router {
     let mut config = AppConfig::default();
     config.web.static_dir = static_dir.to_string_lossy().into_owned();
     config.database.url = "postgres://127.0.0.1:1/lubanpng_offline".to_string();
+    configure(&mut config);
     let pool = sqlx::PgPool::connect_lazy(&config.database.url).expect("lazy postgres pool");
     let storage = Arc::new(S3Storage::from_config(&config.storage).expect("storage config"));
     let state = build_state(
@@ -85,6 +100,10 @@ fn router_with_static(static_dir: &Path) -> Router {
         Arc::new(lubanpng::infrastructure::upscale::DisabledUpscaler),
     );
     build_router(state)
+}
+
+fn router_with_static(static_dir: &Path) -> Router {
+    router_with_static_and(static_dir, |_| {})
 }
 
 async fn fetch(router: &Router, path: &str) -> (StatusCode, HeaderMap, Vec<u8>) {
@@ -136,6 +155,24 @@ async fn serves_generated_shell_for_every_mapped_route() {
 }
 
 #[tokio::test]
+async fn serves_shells_for_trailing_slash_routes() {
+    let dir = fixture_dir("trailing");
+    std::fs::write(dir.join("index.html"), SPA_INDEX).unwrap();
+    write_all_shells(&dir);
+    let router = router_with_static(&dir);
+
+    let (status, _, body) = fetch(&router, "/pricing/").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(text(&body).contains("data-shell=\"zh:pricing\""));
+
+    let (status, _, body) = fetch(&router, "/en/").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(text(&body).contains("data-shell=\"en:home\""));
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
 async fn falls_back_to_spa_when_a_shell_file_is_missing() {
     let dir = fixture_dir("partial");
     std::fs::write(dir.join("index.html"), SPA_INDEX).unwrap();
@@ -166,6 +203,118 @@ async fn keeps_spa_when_the_shells_directory_is_absent() {
         assert_eq!(status, StatusCode::OK, "{path}");
         assert!(text(&body).contains("data-spa-index"), "{path}");
     }
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn serves_the_localized_not_found_shell_with_404_status() {
+    let dir = fixture_dir("not-found");
+    std::fs::write(dir.join("index.html"), SPA_INDEX).unwrap();
+    write_all_shells(&dir);
+    write_not_found_shells(&dir);
+    let router = router_with_static(&dir);
+
+    let (status, headers, body) = fetch(&router, "/definitely-missing").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(headers[header::CONTENT_TYPE], "text/html; charset=utf-8");
+    assert_eq!(headers[header::CACHE_CONTROL], "no-cache");
+    assert!(text(&body).contains("data-shell=\"zh:not-found\""));
+
+    let (status, _, body) = fetch(&router, "/en/definitely-missing").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(text(&body).contains("data-shell=\"en:not-found\""));
+
+    let (status, _, body) = fetch(&router, "/missing-file.png").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(text(&body), "Not Found");
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn serves_root_verification_files_before_the_spa_fallback() {
+    let dir = fixture_dir("verify-file");
+    std::fs::write(dir.join("index.html"), SPA_INDEX).unwrap();
+    write_not_found_shells(&dir);
+    std::fs::write(
+        dir.join("googleae2154dccfab6ae1.html"),
+        "google-site-verification: googleae2154dccfab6ae1.html",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("BingSiteAuth.xml"),
+        "<?xml version=\"1.0\"?><users><user>ABC</user></users>",
+    )
+    .unwrap();
+    let router = router_with_static(&dir);
+
+    let (status, headers, body) = fetch(&router, "/googleae2154dccfab6ae1.html").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(headers[header::CONTENT_TYPE]
+        .to_str()
+        .unwrap()
+        .starts_with("text/html"));
+    assert_eq!(
+        text(&body),
+        "google-site-verification: googleae2154dccfab6ae1.html"
+    );
+
+    let (status, headers, body) = fetch(&router, "/BingSiteAuth.xml").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(headers[header::CONTENT_TYPE].to_str().unwrap().contains("xml"));
+    assert_eq!(
+        text(&body),
+        "<?xml version=\"1.0\"?><users><user>ABC</user></users>"
+    );
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn injects_site_verification_meta_into_shells_and_the_index() {
+    let dir = fixture_dir("verification-meta");
+    std::fs::write(
+        dir.join("index.html"),
+        "<!doctype html><html><head><title>idx</title></head><body>spa</body></html>",
+    )
+    .unwrap();
+    write_all_shells(&dir);
+    write_not_found_shells(&dir);
+    let router = router_with_static_and(&dir, |config| {
+        config.web.google_site_verification = "tok-google".to_string();
+        config.web.bing_site_verification = "tok-bing".to_string();
+    });
+
+    let (status, _, body) = fetch(&router, "/").await;
+    assert_eq!(status, StatusCode::OK);
+    let html = text(&body);
+    assert!(
+        html.contains("<meta name=\"google-site-verification\" content=\"tok-google\" />"),
+        "{html}"
+    );
+    assert!(html.contains("<meta name=\"msvalidate.01\" content=\"tok-bing\" />"), "{html}");
+
+    let (status, _, body) = fetch(&router, "/login").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(text(&body).contains("google-site-verification"));
+
+    let (status, _, body) = fetch(&router, "/definitely-missing").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(text(&body).contains("google-site-verification"));
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn omits_site_verification_meta_without_values() {
+    let dir = fixture_dir("verification-off");
+    std::fs::write(dir.join("index.html"), SPA_INDEX).unwrap();
+    write_all_shells(&dir);
+    let router = router_with_static(&dir);
+
+    let (_, _, body) = fetch(&router, "/").await;
+    assert!(!text(&body).contains("verification"));
 
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -230,14 +379,14 @@ async fn never_serves_shell_files_through_dot_segment_paths() {
 }
 
 #[tokio::test]
-async fn keeps_existing_spa_and_not_found_semantics() {
+async fn keeps_spa_for_app_routes_and_404s_unknown_pages() {
     let dir = fixture_dir("regression");
     std::fs::write(dir.join("index.html"), SPA_INDEX).unwrap();
     std::fs::write(dir.join("robots.txt"), "User-agent: *\nAllow: /\n").unwrap();
     write_all_shells(&dir);
     let router = router_with_static(&dir);
 
-    for path in ["/login", "/dashboard", "/totally-unknown-page"] {
+    for path in ["/login", "/dashboard"] {
         let (status, headers, body) = fetch(&router, path).await;
         assert_eq!(status, StatusCode::OK, "{path}");
         assert_eq!(
@@ -247,6 +396,14 @@ async fn keeps_existing_spa_and_not_found_semantics() {
         );
         assert!(text(&body).contains("data-spa-index"), "{path}");
     }
+
+    let (status, headers, body) = fetch(&router, "/totally-unknown-page").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(headers[header::CONTENT_TYPE]
+        .to_str()
+        .unwrap()
+        .starts_with("text/plain"));
+    assert_eq!(text(&body), "Not Found");
 
     let (status, _, body) = fetch(&router, "/robots.txt").await;
     assert_eq!(status, StatusCode::OK);
