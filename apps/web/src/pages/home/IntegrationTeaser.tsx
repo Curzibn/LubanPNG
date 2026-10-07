@@ -1,3 +1,4 @@
+import { Link } from "react-router"
 import { LinkButton } from "../../components/Button.tsx"
 import { CodeBlock } from "../../components/CodeBlock.tsx"
 import { Container } from "../../components/Container.tsx"
@@ -35,6 +36,12 @@ export const IntegrationTeaser = () => {
             </LinkButton>
             <p className="text-night-muted">{t("teaser.api.note")}</p>
           </div>
+          <Link
+            to={`${localizedPath("/developers", locale)}#upscale`}
+            className="text-ui text-night-muted underline underline-offset-4 hover:text-night-text"
+          >
+            {t("teaser.api.upscale")}
+          </Link>
         </section>
         <section aria-labelledby="cli-teaser-heading" className="flex flex-col gap-4 rounded-card border-thin border-hairline bg-surface p-5 md:gap-4.5 md:p-8">
           <Eyebrow>CLI</Eyebrow>

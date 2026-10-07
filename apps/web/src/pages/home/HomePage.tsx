@@ -14,7 +14,6 @@ import { downloadableItems } from "./compressorRules.ts"
 import { Dropzone } from "./Dropzone.tsx"
 import { IntegrationTeaser } from "./IntegrationTeaser.tsx"
 import { OutputPicker } from "./OutputPicker.tsx"
-import { ProcessSection } from "./ProcessSection.tsx"
 import { QuotaChip } from "./QuotaChip.tsx"
 import { ResultsBoard } from "./ResultsBoard.tsx"
 import { useCompressor } from "./useCompressor.ts"
@@ -141,7 +140,6 @@ export const HomePage = () => {
           )}
         </div>
       </Container>
-      <ProcessSection />
       <IntegrationTeaser />
     </>
   )

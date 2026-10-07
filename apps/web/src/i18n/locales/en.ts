@@ -84,32 +84,6 @@ export const en: Messages = {
   "quota.month.strong": "{remaining}",
   "quota.signIn": "Sign in for {count} a month",
 
-  "process.eyebrow": "Six passes",
-  "process.heading": "A different cut for every format",
-  "process.png.title": "Quantize, then polish losslessly",
-  "process.png.body":
-    "Palette quantization first, then lossless re-encoding. When the quantized result misses the quality bar, it falls back to a pure lossless path.",
-  "process.png.bodyMobile": "When quantization misses the quality bar, it falls back to a pure lossless path.",
-  "process.jpeg.title": "Check the source quality before cutting",
-  "process.jpeg.body":
-    "The source quality is recovered from the quantization tables: images below 70 are skipped to avoid generation loss; re-encodes are verified with SSIM and retried at higher quality if the score drops under 0.90.",
-  "process.jpeg.bodyMobile": "Images below 70 are skipped to avoid generation loss; retries run at higher quality whenever SSIM drops under 0.90.",
-  "process.gif.title": "Frame-by-frame quantization, animation intact",
-  "process.gif.body": "All frames share one palette and only the changed regions between frames are written; frame delays and loop counts are preserved exactly.",
-  "process.gif.bodyMobile": "One shared palette, only changed regions written — nothing is lost from the animation.",
-  "process.webp.title": "Lossy re-encode, SSIM guardrail",
-  "process.webp.body":
-    "Static images are re-encoded lossily with libwebp, raising quality automatically when structural similarity drops below 0.90; lossless sources also get a lossless pass and keep the smaller result; animated WebP is re-encoded frame by frame.",
-  "process.webp.bodyMobile": "Lossy re-encode with an SSIM guardrail; animations are processed frame by frame.",
-  "process.avif.title": "AV1 re-encode",
-  "process.avif.body": "Decoded with dav1d and re-encoded with rav1e at speed level 8, with the same SSIM 0.90 quality floor.",
-  "process.avif.bodyMobile": "AV1 re-encode with an SSIM 0.90 guardrail.",
-  "process.convert.label": "Convert",
-  "process.convert.title": "Convert to WebP / AVIF / PNG / JPEG",
-  "process.convert.body":
-    "Static images convert to any of four target formats, costing 1 extra run; transparent images converted to JPEG are flattened onto white. APNG and animated WebP keep their animation.",
-  "process.convert.bodyMobile": "Static images convert between formats at 1 extra run.",
-
   "results.aria": "Compression results",
   "results.batch": "{count} images",
   "results.batch.one": "{count} image",
@@ -306,6 +280,7 @@ export const en: Messages = {
   "teaser.api.curlLabel": "curl example",
   "teaser.api.docs": "View the API docs",
   "teaser.api.note": "Sign up for 50 runs a month — shared between web and API.",
+  "teaser.api.upscale": "Also upscales PNG / JPEG 2× / 4× →",
   "teaser.cli.title": "A whole directory, one command",
   "teaser.cli.sampleLabel": "CLI example",
   "teaser.cli.sample":
