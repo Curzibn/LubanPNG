@@ -31,13 +31,8 @@ export const en: Messages = {
   "footer.privacy.short": "Privacy",
   "footer.source": "Open source on GitHub · Curzibn/LubanPNG",
 
-  "home.eyebrow": "PNG · JPEG · GIF · WebP · AVIF smart compression",
-  "home.title": "Shave image weight. Upscale 2× / 4×.",
-  "home.lede.mobile":
-    "Photos, screenshots and transparent PNGs usually save the most; already-optimized files and most animations have little headroom, and anything that can't be made smaller is never charged. One click also converts to WebP / AVIF. Upscaling 2× / 4× runs through the API; failed upscales are never charged.",
-  "home.lede.desktop":
-    "LubanPNG gives each format its own path: PNG is palette-quantized then polished losslessly, JPEG has its source quality recovered first so already-light images are never re-compressed, animations are quantized frame by frame with the animation intact, and static images convert to WebP / AVIF in one click. Photos, screenshots and transparent PNGs usually save the most; already-optimized files and most animations have little headroom — a result that can't be made smaller is never charged. Upscaling 2× / 4× runs through the API; failed upscales are never charged.",
-  "home.lede.apiLink": "through the API",
+  "home.eyebrow": "PNG · JPEG · GIF · WebP · AVIF online compression",
+  "home.title": "Make images smaller — free.",
   "home.quota.anonymous.lead": "Today's free runs are used up.",
   "home.quota.anonymous.action": "Sign in to keep going",
   "home.quota.anonymous.body": "Signing up gives you 50 runs a month, shared across the web app, API and CLI.",
@@ -442,9 +437,9 @@ export const en: Messages = {
   "nf.body": "The address may be mistyped, or the page has moved.",
   "nf.back": "Back home",
 
-  "meta.home.title": "LubanPNG · Shave image weight. Upscale 2× / 4×",
+  "meta.home.title": "LubanPNG · Compress images online, free",
   "meta.home.description":
-    "Compress PNG, JPEG, GIF, WebP and AVIF images online — static images convert formats, animations stay animated — and upscale PNG or JPEG 2× or 4×. Photos, screenshots and transparent PNGs save the most, while already-optimized files and most animations have little headroom; results that can't get smaller are never charged, and failed upscales are never charged either. One quota shared across web, API and CLI, free to use.",
+    "Compress PNG, JPEG, GIF, WebP and AVIF images online — animations stay animated, static images convert between formats, and PNG or JPEG upscale 2× or 4×. Results that can't get smaller are never charged. Free, with one quota across web, API and CLI.",
   "meta.pricing.title": "Pricing · LubanPNG",
   "meta.pricing.description": "One quota shared across web, API and CLI: 5 runs a day signed out, 50 a month signed in. Compressions are counted only when the output really gets smaller; a successful upscale costs 1 run and failed upscales are never charged. Pro and metered plans are in the works.",
   "meta.developers.title": "Developers · LubanPNG",
@@ -460,7 +455,7 @@ export const en: Messages = {
   "meta.dashboard.description": "Your LubanPNG dashboard: quota usage, API keys and recent tasks.",
   "meta.notFound.title": "Page not found · LubanPNG",
   "meta.notFound.description": "The page you were looking for doesn't exist or has moved.",
-  "meta.ogImageAlt": "LubanPNG: shave image weight, upscale 2× / 4×. Compression supports PNG · JPEG · GIF · WebP · AVIF; upscaling supports PNG / JPEG",
+  "meta.ogImageAlt": "LubanPNG: compress images online — PNG, JPEG, GIF, WebP and AVIF, plus 2× / 4× upscaling for PNG and JPEG",
 
   "api.networkError": "Network error — check your connection and try again",
   "api.unreadable": "The service is unavailable right now. Please try again later.",

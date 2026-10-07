@@ -114,21 +114,6 @@ describe("dictionaries", () => {
     }
   })
 
-  it("says per-format where the wins actually are", () => {
-    for (const dictionary of [zhCN, en]) {
-      expect(dictionary["home.lede.desktop"]).toMatch(/拍照|照片|screenshot|photo/i)
-      expect(dictionary["home.lede.desktop"]).toMatch(/already-optimized|压过/i)
-    }
-  })
-
-  it("keeps the API upscale path linkable inside the home lede", () => {
-    for (const dictionary of [zhCN, en]) {
-      for (const key of ["home.lede.mobile", "home.lede.desktop"] as const) {
-        expect(dictionary[key]).toContain(dictionary["home.lede.apiLink"])
-      }
-    }
-  })
-
   it("keeps the English CLI samples in the order the CLI prints", () => {
     expect(en["teaser.cli.sample"]).toContain("saved 1.72 MB")
     expect(en["dev.cli.sample"]).toContain("saved 2.11 MB")

@@ -29,13 +29,8 @@ export const zhCN = {
   "footer.privacy.short": "隐私",
   "footer.source": "开源于 GitHub · Curzibn/LubanPNG",
 
-  "home.eyebrow": "PNG · JPEG · GIF · WebP · AVIF 智能压缩",
-  "home.title": "把图片刨薄，也能放大 2×、4×。",
-  "home.lede.mobile":
-    "照片、截图与透明 PNG 通常收益最大，已经压过的图和多数动图空间有限；压不小就不计次数，还能一键转 WebP / AVIF。放大 2× / 4× 通过 API，失败不计次数。",
-  "home.lede.desktop":
-    "鲁班刨按格式各走一套压缩路径：PNG 先做调色板量化再无损重编码，JPEG 先反推原图质量、低质量图不再重复压缩，动图逐帧量化并保留动画，静态图还能一键转成 WebP / AVIF。照片、截图与透明 PNG 通常收益最大；已经压过的图与多数动图空间有限，压不小就不计次数。放大 2× / 4× 通过 API，失败不计次数。",
-  "home.lede.apiLink": "通过 API",
+  "home.eyebrow": "PNG · JPEG · GIF · WebP · AVIF 在线压缩",
+  "home.title": "把图片变小，免费。",
   "home.quota.anonymous.lead": "今日免费次数已用完。",
   "home.quota.anonymous.action": "登录后继续用",
   "home.quota.anonymous.body": "注册即每月 50 次，网页、API、CLI 共用同一份额度。",
@@ -426,9 +421,9 @@ export const zhCN = {
   "nf.body": "地址可能写错了，或者页面已经移走。",
   "nf.back": "回到首页",
 
-  "meta.home.title": "LubanPNG · 把图片刨薄，也能放大 2×、4×",
+  "meta.home.title": "LubanPNG · 免费在线压缩图片",
   "meta.home.description":
-    "鲁班刨（LubanPNG）在线压缩 PNG、JPEG、GIF、WebP、AVIF 图片，静态图可转换格式，动图保留动画；也能把 PNG、JPEG 放大 2× 或 4×。照片、截图与透明 PNG 收益最大，已经压过的图与多数动图空间有限；压不小不计次数，放大失败同样不计次数。网页、API、CLI 共用一份额度，免费可用。",
+    "LubanPNG 在线压缩 PNG、JPEG、GIF、WebP、AVIF 图片：动图保留动画，静态图可转格式，也能放大 2×、4×。没变小不计次数，免费使用，网页、API、CLI 共用额度。",
   "meta.pricing.title": "定价 · LubanPNG",
   "meta.pricing.description": "网页、API、CLI 共用一份额度：未登录每天 5 次，注册后每月 50 次；压缩只有真正产出更小文件才计次，放大成功计 1 次且失败不计次；Pro 与按量套餐规划中。",
   "meta.developers.title": "开发者 · LubanPNG",
@@ -443,7 +438,7 @@ export const zhCN = {
   "meta.dashboard.description": "LubanPNG 工作台：额度用量、API Key 与最近任务。",
   "meta.notFound.title": "页面不存在 · LubanPNG",
   "meta.notFound.description": "你访问的页面不存在或已经移走。",
-  "meta.ogImageAlt": "鲁班刨：把图片刨薄，也能放大 2×、4×。压缩支持 PNG·JPEG·GIF·WebP·AVIF，放大支持 PNG·JPEG",
+  "meta.ogImageAlt": "LubanPNG：在线压缩图片，支持 PNG、JPEG、GIF、WebP、AVIF，也能放大 PNG、JPEG 2×、4×",
 
   "api.networkError": "网络错误，请检查连接后重试",
   "api.unreadable": "服务暂时不可用，请稍后再试",
