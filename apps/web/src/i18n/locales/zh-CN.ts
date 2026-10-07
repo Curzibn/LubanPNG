@@ -267,6 +267,20 @@ export const zhCN = {
   "dev.cli.usage": "套餐、本期用量与重置时间",
   "dev.cli.sample":
     "$ lubanpng login\n  粘贴你的 API Key: lp_live_…\n  已登录 zibin@example.com · 本月剩余 46 次\n\n$ lubanpng compress ./images --out ./dist --recursive\n  photo_banner.jpg   2.40 MB → 0.89 MB   -63%\n  logo@2x.png         312 KB →   96 KB   -69%\n  sticker_wave.gif   1.10 MB → 0.71 MB   -36%\n  本次 3 张，节省 2.11 MB，本月剩余 43 次\n\n$ lubanpng compress ./hero.png --convert webp\n  hero.png           1.20 MB → 0.31 MB   -74%   → hero.webp\n  本次 1 张，节省 0.89 MB，本月剩余 41 次，1 张已转换\n\n$ lubanpng usage\n  免费套餐 · 本月已用 7 / 50 · 10 月 1 日重置",
+  "dev.faq.title": "常见问题",
+  "dev.faq.q1": "免费额度有多少？",
+  "dev.faq.a1": "匿名每天 5 次，注册后每月 50 次；网页、API 和 CLI 共用同一份额度，放大与压缩同池。",
+  "dev.faq.q2": "什么时候会扣次数？",
+  "dev.faq.a2":
+    "压缩只有真正产出更小的文件才计 1 次；失败、结果没变小都不计。显式要求格式转换额外计 1 次（目标格式与原格式相同只计 1 次）。放大成功计 1 次。",
+  "dev.faq.q3": "支持哪些格式？动图会丢动画吗？",
+  "dev.faq.a3":
+    "压缩支持 PNG、JPEG、GIF、WebP、AVIF，APNG、GIF 与动态 WebP 会保留动画；静态图可转成 png / jpeg / webp / avif。放大仅支持静态 PNG、JPEG，可选 2× 或 4×。",
+  "dev.faq.q4": "怎么在脚本或 CI 里批量压缩？",
+  "dev.faq.a4":
+    "用 CLI：lubanpng compress ./images --out ./dist --recursive（支持 --in-place、--concurrency、--convert、--background）；服务端可调 REST API，登录后创建 API Key 即可在任意语言使用。",
+  "dev.faq.q5": "上传的文件保留多久？下载链接会过期吗？",
+  "dev.faq.a5": "免费与匿名任务的文件保留 24 小时，到期自动清理；下载走 10 分钟有效的签名链接。",
 
   "teaser.api.title": "三个请求，接进你的流水线",
   "teaser.api.curlLabel": "curl 示例",

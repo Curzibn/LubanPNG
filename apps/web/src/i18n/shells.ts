@@ -84,7 +84,9 @@ const buildShellArtifact = (
   const content = buildStaticContent(routeId, locale)
   if (content !== "") html = injectStaticContent(html, content)
   const structuredData = buildStructuredData(routeId, locale)
-  if (structuredData !== null) html = injectStructuredData(html, renderJsonLd(structuredData))
+  if (structuredData.length > 0) {
+    html = injectStructuredData(html, structuredData.map(renderJsonLd).join("\n  "))
+  }
   return { routeId, locale, fileName, urlPath, head, html }
 }
 

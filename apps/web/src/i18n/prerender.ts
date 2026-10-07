@@ -2,6 +2,7 @@ import {
   agentChannelRows,
   cliRows,
   convertSample,
+  developerFaqs,
   downloadSample,
   endpointRows,
   errorRows,
@@ -274,6 +275,20 @@ ${dataTable(
   cliRows.map((row) => [mono(row.command), `<span class="text-ink-secondary">${text(dictionary, row.meaningKey)}</span>`]),
 )}`,
   )}
+${section(
+    "faq",
+    text(dictionary, "dev.faq.title"),
+    `            <div class="flex flex-col gap-4">
+${developerFaqs
+  .map(
+    ({ questionKey, answerKey }) => `              <div class="flex flex-col gap-2 border-t-thin border-hairline pt-4.5">
+                <h3 class="text-ui-lg font-medium text-ink">${text(dictionary, questionKey)}</h3>
+                <p class="text-ui leading-prose text-ink-secondary">${text(dictionary, answerKey)}</p>
+              </div>`,
+  )
+  .join("\n")}
+            </div>`,
+  )}
         </div>
       </div>
     </main>`
@@ -311,55 +326,66 @@ export const buildStaticContent = (routeId: ShellRouteId, locale: Locale): strin
   return [siteHeader(locale, dictionary), main, siteFooter(locale, dictionary)].join("\n")
 }
 
-export const buildStructuredData = (routeId: ShellRouteId, locale: Locale): JsonLd | null => {
+const faqPage = (
+  locale: Locale,
+  dictionary: Messages,
+  faqs: ReadonlyArray<{ questionKey: MessageKey; answerKey: MessageKey }>,
+): JsonLd => ({
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  inLanguage: locale,
+  mainEntity: faqs.map(({ questionKey, answerKey }) => ({
+    "@type": "Question",
+    name: dictionary[questionKey],
+    acceptedAnswer: { "@type": "Answer", text: dictionary[answerKey] },
+  })),
+})
+
+export const buildStructuredData = (routeId: ShellRouteId, locale: Locale): JsonLd[] => {
   const dictionary = messages[locale]
   switch (routeId) {
     case "home":
-      return {
-        "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        name: "LubanPNG",
-        url: `${SITE_ORIGIN}${localizedPath("/", locale)}`,
-        applicationCategory: "MultimediaApplication",
-        operatingSystem: "Web",
-        description: dictionary["meta.home.description"],
-        inLanguage: locale,
-        featureList: [
-          dictionary["formats.list"],
-          dictionary["dev.section.convert"],
-          dictionary["dev.section.upscale"],
-          dictionary["dev.section.cli"],
-        ],
-        offers: { "@type": "Offer", price: "0", priceCurrency: "CNY" },
-      }
+      return [
+        {
+          "@context": "https://schema.org",
+          "@type": "SoftwareApplication",
+          name: "LubanPNG",
+          url: `${SITE_ORIGIN}${localizedPath("/", locale)}`,
+          applicationCategory: "MultimediaApplication",
+          operatingSystem: "Web",
+          description: dictionary["meta.home.description"],
+          inLanguage: locale,
+          featureList: [
+            dictionary["formats.list"],
+            dictionary["dev.section.convert"],
+            dictionary["dev.section.upscale"],
+            dictionary["dev.section.cli"],
+          ],
+          offers: { "@type": "Offer", price: "0", priceCurrency: "CNY" },
+        },
+      ]
     case "pricing":
-      return {
-        "@context": "https://schema.org",
-        "@type": "FAQPage",
-        inLanguage: locale,
-        mainEntity: pricingFaqs.map(({ questionKey, answerKey }) => ({
-          "@type": "Question",
-          name: dictionary[questionKey],
-          acceptedAnswer: { "@type": "Answer", text: dictionary[answerKey] },
-        })),
-      }
+      return [faqPage(locale, dictionary, pricingFaqs)]
     case "developers":
-      return {
-        "@context": "https://schema.org",
-        "@type": "HowTo",
-        name: `${dictionary["dev.title"]} · ${dictionary["dev.section.quickstart"]}`,
-        description: dictionary["dev.intro"],
-        inLanguage: locale,
-        step: [
-          { "@type": "HowToStep", name: dictionary["dev.step1"], text: dictionary["dev.step1"] },
-          { "@type": "HowToStep", name: dictionary["dev.step2"], text: dictionary["dev.step2"] },
-          { "@type": "HowToStep", name: dictionary["dev.step3"], text: dictionary["dev.step3"] },
-        ],
-      }
+      return [
+        {
+          "@context": "https://schema.org",
+          "@type": "HowTo",
+          name: `${dictionary["dev.title"]} · ${dictionary["dev.section.quickstart"]}`,
+          description: dictionary["dev.intro"],
+          inLanguage: locale,
+          step: [
+            { "@type": "HowToStep", name: dictionary["dev.step1"], text: dictionary["dev.step1"] },
+            { "@type": "HowToStep", name: dictionary["dev.step2"], text: dictionary["dev.step2"] },
+            { "@type": "HowToStep", name: dictionary["dev.step3"], text: dictionary["dev.step3"] },
+          ],
+        },
+        faqPage(locale, dictionary, developerFaqs),
+      ]
     case "notFound":
     case "terms":
     case "privacy":
-      return null
+      return []
   }
 }
 

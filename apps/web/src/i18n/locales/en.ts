@@ -275,6 +275,22 @@ export const en: Messages = {
   "dev.cli.usage": "Plan, usage for this period and reset time",
   "dev.cli.sample":
     "$ lubanpng login\n  Paste your API key: lp_live_…\n  Signed in as zibin@example.com · 46 runs left this month\n\n$ lubanpng compress ./images --out ./dist --recursive\n  photo_banner.jpg   2.40 MB → 0.89 MB   -63%\n  logo@2x.png         312 KB →   96 KB   -69%\n  sticker_wave.gif   1.10 MB → 0.71 MB   -36%\n  3 images, saved 2.11 MB, 43 runs left this month\n\n$ lubanpng compress ./hero.png --convert webp\n  hero.png           1.20 MB → 0.31 MB   -74%   → hero.webp\n  1 image, saved 0.89 MB, 41 runs left this month, 1 converted\n\n$ lubanpng usage\n  Free plan · used 7 / 50 this month · resets Oct 1",
+  "dev.faq.title": "FAQ",
+  "dev.faq.q1": "What's the free quota?",
+  "dev.faq.a1":
+    "5 runs per day anonymously, or 50 per month with a free account — one shared quota across the web app, the API and the CLI; upscaling draws from the same pool.",
+  "dev.faq.q2": "When is a run charged?",
+  "dev.faq.a2":
+    "A compression run is charged only when the output is genuinely smaller. Failures and results that don't get smaller are never charged. Requesting a format conversion adds 1 extra run (same-format requests don't). A successful upscale costs 1 run.",
+  "dev.faq.q3": "Which formats are supported? Do animations stay animated?",
+  "dev.faq.a3":
+    "Compression handles PNG, JPEG, GIF, WebP and AVIF — APNG, GIF and animated WebP keep their animation. Static images convert to png / jpeg / webp / avif. Upscaling accepts static PNG and JPEG at 2× or 4×.",
+  "dev.faq.q4": "How do I batch-compress in scripts or CI?",
+  "dev.faq.a4":
+    "Use the CLI: lubanpng compress ./images --out ./dist --recursive (also --in-place, --concurrency, --convert, --background). Or create an API key and call the REST API from any language.",
+  "dev.faq.q5": "How long are uploaded files kept? Do download links expire?",
+  "dev.faq.a5":
+    "Files from free and anonymous runs are kept for 24 hours, then deleted automatically. Downloads use a signed link valid for 10 minutes.",
 
   "teaser.api.title": "Three requests to wire it into your pipeline",
   "teaser.api.curlLabel": "curl example",

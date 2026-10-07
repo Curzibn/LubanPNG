@@ -10,6 +10,7 @@ import {
   agentChannelRows,
   cliRows,
   convertSample,
+  developerFaqs,
   downloadSample,
   endpointRows,
   errorRows,
@@ -34,13 +35,14 @@ const sections = [
   { id: "quota", labelKey: "dev.section.quota" },
   { id: "agents", labelKey: "dev.section.agents" },
   { id: "cli", labelKey: "dev.section.cli" },
+  { id: "faq", labelKey: "dev.faq.title" },
 ] as const satisfies ReadonlyArray<{ id: string; labelKey: MessageKey }>
 
 type SectionId = (typeof sections)[number]["id"]
 
 const ACTIVE_OFFSET = 160
 const FIRST_SECTION: SectionId = "auth"
-const LAST_SECTION: SectionId = "cli"
+const LAST_SECTION: SectionId = "faq"
 
 const scrolledToBottom = (): boolean =>
   window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 1
@@ -313,6 +315,17 @@ export const DevelopersPage = () => {
                 ))}
               </tbody>
             </Table>
+          </Section>
+
+          <Section id="faq" title={t("dev.faq.title")}>
+            <div className="flex flex-col gap-4">
+              {developerFaqs.map((faq) => (
+                <div key={faq.questionKey} className="flex flex-col gap-2 border-t-thin border-hairline pt-4.5">
+                  <h3 className="text-ui-lg font-medium text-ink">{t(faq.questionKey)}</h3>
+                  <p className="text-ui leading-prose text-ink-secondary">{t(faq.answerKey)}</p>
+                </div>
+              ))}
+            </div>
           </Section>
         </div>
       </div>

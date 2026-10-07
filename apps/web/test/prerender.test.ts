@@ -29,7 +29,7 @@ describe("static content", () => {
     expect(html).toContain(htmlEscape(zh["pricing.faq.a5"]))
   })
 
-  it("carries the English developer steps, endpoint paths and error codes", () => {
+  it("carries the English developer steps, endpoint paths, error codes and FAQ", () => {
     const html = buildStaticContent("developers", "en")
     expect(html).toContain(htmlEscape(en["dev.title"]))
     expect(html).toContain(htmlEscape(en["dev.step1"]))
@@ -38,6 +38,16 @@ describe("static content", () => {
     expect(html).toContain("/v1/images/upscale")
     expect(html).toContain(">4003<")
     expect(html).toContain(htmlEscape(en["dev.format.heic.note"]))
+    expect(html).toContain(htmlEscape(en["dev.faq.title"]))
+    expect(html).toContain(htmlEscape(en["dev.faq.q1"]))
+    expect(html).toContain(htmlEscape(en["dev.faq.a5"]))
+  })
+
+  it("carries the Chinese developer FAQ in the fragment", () => {
+    const html = buildStaticContent("developers", "zh-CN")
+    expect(html).toContain(htmlEscape(zh["dev.faq.title"]))
+    expect(html).toContain(htmlEscape(zh["dev.faq.q2"]))
+    expect(html).toContain(htmlEscape(zh["dev.faq.a2"]))
   })
 
   it("renders the localized not-found copy", () => {
@@ -60,39 +70,46 @@ describe("static content", () => {
 
 describe("structured data", () => {
   it("describes the product as a free web application on the home page", () => {
-    const data = buildStructuredData("home", "zh-CN")
+    const blocks = buildStructuredData("home", "zh-CN")
+    expect(blocks).toHaveLength(1)
+    const data = blocks[0]
     expect(data?.["@context"]).toBe("https://schema.org")
     expect(data?.["@type"]).toBe("SoftwareApplication")
     expect(data?.["name"]).toBe("LubanPNG")
     expect(data?.["url"]).toBe(`${SITE_ORIGIN}/`)
     expect(data?.["offers"]).toEqual({ "@type": "Offer", price: "0", priceCurrency: "CNY" })
     expect((data?.["featureList"] as string[]).length).toBeGreaterThan(0)
-    expect(buildStructuredData("home", "en")?.["url"]).toBe(`${SITE_ORIGIN}/en/`)
+    expect(buildStructuredData("home", "en")[0]?.["url"]).toBe(`${SITE_ORIGIN}/en/`)
   })
 
   it("mirrors the visible pricing FAQ order and answers", () => {
-    const data = buildStructuredData("pricing", "zh-CN")
-    expect(data?.["@type"]).toBe("FAQPage")
-    const questions = data?.["mainEntity"] as ReadonlyArray<{ name: string; acceptedAnswer: { text: string } }>
+    const blocks = buildStructuredData("pricing", "zh-CN")
+    expect(blocks.map((block) => block["@type"])).toEqual(["FAQPage"])
+    const questions = blocks[0]?.["mainEntity"] as ReadonlyArray<{ name: string; acceptedAnswer: { text: string } }>
     expect(questions).toHaveLength(5)
     expect(questions[0]?.name).toBe(zh["pricing.faq.q1"])
     expect(questions[1]?.name).toBe(zh["pricing.faq.q5"])
     expect(questions[0]?.acceptedAnswer.text).toBe(zh["pricing.faq.a1"])
   })
 
-  it("walks the three developer steps as a HowTo", () => {
-    const data = buildStructuredData("developers", "en")
-    expect(data?.["@type"]).toBe("HowTo")
-    const steps = data?.["step"] as ReadonlyArray<{ name: string }>
+  it("walks the developer steps as a HowTo and mirrors the visible developer FAQ", () => {
+    const blocks = buildStructuredData("developers", "en")
+    expect(blocks.map((block) => block["@type"])).toEqual(["HowTo", "FAQPage"])
+    const steps = blocks[0]?.["step"] as ReadonlyArray<{ name: string }>
     expect(steps).toHaveLength(3)
     expect(steps[0]?.name).toBe(en["dev.step1"])
     expect(steps[2]?.name).toBe(en["dev.step3"])
+    const questions = blocks[1]?.["mainEntity"] as ReadonlyArray<{ name: string; acceptedAnswer: { text: string } }>
+    expect(questions).toHaveLength(5)
+    expect(questions[0]?.name).toBe(en["dev.faq.q1"])
+    expect(questions[0]?.acceptedAnswer.text).toBe(en["dev.faq.a1"])
+    expect(questions[4]?.name).toBe(en["dev.faq.q5"])
   })
 
   it("emits nothing for the legal and not-found pages", () => {
-    expect(buildStructuredData("terms", "zh-CN")).toBeNull()
-    expect(buildStructuredData("privacy", "zh-CN")).toBeNull()
-    expect(buildStructuredData("notFound", "zh-CN")).toBeNull()
+    expect(buildStructuredData("terms", "zh-CN")).toEqual([])
+    expect(buildStructuredData("privacy", "zh-CN")).toEqual([])
+    expect(buildStructuredData("notFound", "zh-CN")).toEqual([])
   })
 })
 

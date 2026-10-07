@@ -74,19 +74,17 @@ describe("static shells", () => {
   })
 
   it("embeds parseable JSON-LD in the body of the landing pages", () => {
-    const expectedTypes: ReadonlyArray<[ShellRouteId, string]> = [
-      ["home", "SoftwareApplication"],
-      ["pricing", "FAQPage"],
-      ["developers", "HowTo"],
+    const expectedTypes: ReadonlyArray<[ShellRouteId, string[]]> = [
+      ["home", ["SoftwareApplication"]],
+      ["pricing", ["FAQPage"]],
+      ["developers", ["HowTo", "FAQPage"]],
     ]
-    for (const [routeId, type] of expectedTypes) {
+    for (const [routeId, types] of expectedTypes) {
       for (const locale of ["zh-CN", "en"] as Locale[]) {
         const { html } = artifactFor(routeId, locale)
-        const match = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)
-        expect(match, `${routeId}/${locale} has no JSON-LD`).not.toBeNull()
-        const data = JSON.parse(match![1] ?? "") as { "@type": string }
-        expect(data["@type"], `${routeId}/${locale}`).toBe(type)
-        expect(html.indexOf("application/ld+json")).toBeGreaterThan(html.indexOf("</head>"))
+        const scripts = Array.from(html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g))
+        expect(scripts.map((match) => JSON.parse(match[1] ?? "")["@type"]), `${routeId}/${locale}`).toEqual(types)
+        expect(html.indexOf("application/ld+json"), `${routeId}/${locale}`).toBeGreaterThan(html.indexOf("</head>"))
       }
     }
     for (const locale of ["zh-CN", "en"] as Locale[]) {

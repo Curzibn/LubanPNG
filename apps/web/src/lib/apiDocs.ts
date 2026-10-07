@@ -60,6 +60,14 @@ export const agentChannelRows: ReadonlyArray<{ channelKey: MessageKey; statusKey
   { channelKey: "dev.agents.x402", statusKey: "dev.agents.x402Status", noteKey: "dev.agents.x402Note" },
 ]
 
+export const developerFaqs = [
+  { questionKey: "dev.faq.q1", answerKey: "dev.faq.a1" },
+  { questionKey: "dev.faq.q2", answerKey: "dev.faq.a2" },
+  { questionKey: "dev.faq.q3", answerKey: "dev.faq.a3" },
+  { questionKey: "dev.faq.q4", answerKey: "dev.faq.a4" },
+  { questionKey: "dev.faq.q5", answerKey: "dev.faq.a5" },
+] as const satisfies ReadonlyArray<{ questionKey: MessageKey; answerKey: MessageKey }>
+
 export const uploadSample = (origin: string) =>
   [
     `curl -X POST ${origin}/v1/images/compress \\`,
