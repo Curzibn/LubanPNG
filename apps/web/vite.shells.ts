@@ -2,11 +2,15 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import type { Plugin } from "vite"
 import { buildPageHead, type PageHead } from "./src/i18n/meta.ts"
+import type { ShellRouteId } from "./src/i18n/prerender.ts"
 import { buildShellArtifacts, renderShellDocument } from "./src/i18n/shells.ts"
 
 const INDEX_HEAD: PageHead = buildPageHead("home", "zh-CN", "/")
 
 export const shellOutputDir = "shells"
+
+const CONTENT_ROUTES: readonly ShellRouteId[] = ["home", "pricing", "developers", "notFound"]
+const STRUCTURED_DATA_ROUTES: readonly ShellRouteId[] = ["home", "pricing", "developers"]
 
 export const emitStaticShells = (outDir: string): string[] => {
   const artifacts = buildShellArtifacts(readFileSync(join(outDir, "index.html"), "utf8"))
@@ -18,6 +22,12 @@ export const emitStaticShells = (outDir: string): string[] => {
     const written = readFileSync(target, "utf8")
     if (!written.includes("</head>") || !written.includes("<title>")) {
       throw new Error(`static shell ${artifact.fileName} was written incomplete`)
+    }
+    if (CONTENT_ROUTES.includes(artifact.routeId) && !written.includes("data-static-content")) {
+      throw new Error(`static shell ${artifact.fileName} is missing its static content`)
+    }
+    if (STRUCTURED_DATA_ROUTES.includes(artifact.routeId) && !written.includes('type="application/ld+json"')) {
+      throw new Error(`static shell ${artifact.fileName} is missing its structured data`)
     }
     return target
   })

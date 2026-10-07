@@ -1,9 +1,8 @@
 import { Link } from "react-router"
 import { useI18n } from "../i18n/I18nProvider.tsx"
 import { localizedPath } from "../i18n/locale.ts"
+import { GITHUB_URL } from "../lib/site.ts"
 import { BrandMark, Wordmark } from "./BrandMark.tsx"
-
-export const GITHUB_URL = "https://github.com/Curzibn/LubanPNG"
 
 const footerLinks = [
   { labelKey: "footer.pricing", shortKey: "footer.pricing.short", to: "/pricing" },

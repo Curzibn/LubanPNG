@@ -34,8 +34,19 @@ export const buildPageHead = (id: RouteMetaId, locale: Locale, pathname: string)
   const dictionary = messages[locale]
   const title = dictionary[`meta.${id}.title`]
   const description = dictionary[`meta.${id}.description`]
-  const image = locale === "en" ? `${SITE_ORIGIN}/og-en.png` : `${SITE_ORIGIN}/og.png`
   const publicPath = isPublicRoute(id) ? publicPaths[id] : undefined
+  if (id === "notFound") {
+    return {
+      lang: locale,
+      title,
+      metas: [
+        { attr: "name", key: "description", content: description },
+        { attr: "name", key: "robots", content: "noindex" },
+      ],
+      links: [],
+    }
+  }
+  const image = locale === "en" ? `${SITE_ORIGIN}/og-en.png` : `${SITE_ORIGIN}/og.png`
   const pageUrl = `${SITE_ORIGIN}${publicPath === undefined ? pathname : localizedPath(publicPath, locale)}`
   const metas: MetaTag[] = [
     { attr: "name", key: "description", content: description },
@@ -75,6 +86,7 @@ export const applyPageHead = (doc: Document, head: PageHead): void => {
   doc.documentElement.lang = head.lang
   doc.title = head.title
   for (const link of doc.head.querySelectorAll('link[rel="canonical"], link[rel="alternate"]')) link.remove()
+  doc.head.querySelector('meta[name="robots"]')?.remove()
   for (const { attr, key, content } of head.metas) {
     const selector = `meta[${attr}="${key}"]`
     let element = doc.head.querySelector(selector)

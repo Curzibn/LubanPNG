@@ -6,7 +6,8 @@ import { describe, expect, it } from "vitest"
 import { emitStaticShells } from "../vite.shells.ts"
 import { buildPageHead, SITE_ORIGIN, type PublicRouteId } from "../src/i18n/meta.ts"
 import type { Locale } from "../src/i18n/locale.ts"
-import { buildShellArtifacts, renderShellDocument, shellFileName, shellUrlPath } from "../src/i18n/shells.ts"
+import type { ShellRouteId } from "../src/i18n/prerender.ts"
+import { buildShellArtifacts, notFoundShellFileName, renderShellDocument, shellFileName, shellUrlPath } from "../src/i18n/shells.ts"
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), "..")
 const indexHtml = readFileSync(join(webRoot, "index.html"), "utf8")
@@ -20,7 +21,7 @@ const routes: ReadonlyArray<{ routeId: PublicRouteId; zh: string; en: string }> 
   { routeId: "privacy", zh: "zh/privacy.html", en: "en/privacy.html" },
 ]
 
-const artifactFor = (routeId: PublicRouteId, locale: Locale) => {
+const artifactFor = (routeId: ShellRouteId, locale: Locale) => {
   const found = artifacts.find((artifact) => artifact.routeId === routeId && artifact.locale === locale)
   if (found === undefined) throw new Error(`missing shell ${routeId}/${locale}`)
   return found
@@ -36,11 +37,67 @@ const headOf = (html: string): string => html.slice(0, html.indexOf("</head>"))
 const attributeOf = (html: string, pattern: RegExp): string | null => html.match(pattern)?.[1] ?? null
 
 describe("static shells", () => {
-  it("emits the ten public route shells under zh and en", () => {
+  it("emits every public route shell plus a localized not-found shell", () => {
     expect(artifacts.map((artifact) => artifact.fileName).sort()).toEqual(
-      routes.flatMap((route) => [route.zh, route.en]).sort(),
+      [...routes.flatMap((route) => [route.zh, route.en]), "zh/not-found.html", "en/not-found.html"].sort(),
     )
-    expect(artifacts).toHaveLength(10)
+    expect(artifacts).toHaveLength(12)
+  })
+
+  it("keeps the pre-rendered copy outside the SPA root slot", () => {
+    for (const routeId of ["home", "pricing", "developers"] as const) {
+      for (const locale of ["zh-CN", "en"] as Locale[]) {
+        const { html } = artifactFor(routeId, locale)
+        expect(html, `${routeId}/${locale}`).toContain("<div data-static-content>")
+        expect(html.indexOf("data-static-content"), `${routeId}/${locale}`).toBeLessThan(
+          html.indexOf('<div id="root"></div>'),
+        )
+        expect(html, `${routeId}/${locale}`).toContain('<div id="root"></div>')
+      }
+    }
+    for (const locale of ["zh-CN", "en"] as Locale[]) {
+      expect(artifactFor("terms", locale).html).not.toContain("data-static-content")
+      expect(artifactFor("privacy", locale).html).not.toContain("data-static-content")
+    }
+  })
+
+  it("ships a noindex not-found shell per locale without canonical links", () => {
+    for (const locale of ["zh-CN", "en"] as Locale[]) {
+      const artifact = artifactFor("notFound", locale)
+      expect(artifact.fileName).toBe(notFoundShellFileName(locale))
+      expect(artifact.head.links).toEqual([])
+      expect(artifact.html).toContain('<meta name="robots" content="noindex" />')
+      expect(artifact.html).not.toContain('rel="canonical"')
+      expect(artifact.html).toContain("data-static-content")
+      expect(artifact.html).toContain(`<title>${buildPageHead("notFound", locale, "/").title}</title>`)
+    }
+  })
+
+  it("embeds parseable JSON-LD in the body of the landing pages", () => {
+    const expectedTypes: ReadonlyArray<[ShellRouteId, string]> = [
+      ["home", "SoftwareApplication"],
+      ["pricing", "FAQPage"],
+      ["developers", "HowTo"],
+    ]
+    for (const [routeId, type] of expectedTypes) {
+      for (const locale of ["zh-CN", "en"] as Locale[]) {
+        const { html } = artifactFor(routeId, locale)
+        const match = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)
+        expect(match, `${routeId}/${locale} has no JSON-LD`).not.toBeNull()
+        const data = JSON.parse(match![1] ?? "") as { "@type": string }
+        expect(data["@type"], `${routeId}/${locale}`).toBe(type)
+        expect(html.indexOf("application/ld+json")).toBeGreaterThan(html.indexOf("</head>"))
+      }
+    }
+    for (const locale of ["zh-CN", "en"] as Locale[]) {
+      expect(artifactFor("terms", locale).html).not.toContain("application/ld+json")
+    }
+  })
+
+  it("keeps every English shell clear of Chinese characters", () => {
+    for (const artifact of artifacts.filter((candidate) => candidate.locale === "en")) {
+      expect(cjk.test(artifact.html), artifact.fileName).toBe(false)
+    }
   })
 
   it("names and maps every route to its localized path", () => {
@@ -111,14 +168,16 @@ describe("static shells", () => {
   })
 
   it("declares each head field exactly once", () => {
-    for (const artifact of artifacts) {
-      const head = headOf(artifact.html)
-      expect(head.match(/<title>/g)).toHaveLength(1)
-      expect(head.match(/<meta name="description"/g)).toHaveLength(1)
-      expect(head.match(/rel="canonical"/g)).toHaveLength(1)
-      expect(head.match(/hreflang="x-default"/g)).toHaveLength(1)
-      expect(head.match(/property="og:url"/g)).toHaveLength(1)
-      expect(head.match(/property="og:image"/g)).toHaveLength(1)
+    for (const route of routes) {
+      for (const locale of ["zh-CN", "en"] as Locale[]) {
+        const head = headOf(artifactFor(route.routeId, locale).html)
+        expect(head.match(/<title>/g)).toHaveLength(1)
+        expect(head.match(/<meta name="description"/g)).toHaveLength(1)
+        expect(head.match(/rel="canonical"/g)).toHaveLength(1)
+        expect(head.match(/hreflang="x-default"/g)).toHaveLength(1)
+        expect(head.match(/property="og:url"/g)).toHaveLength(1)
+        expect(head.match(/property="og:image"/g)).toHaveLength(1)
+      }
     }
   })
 
@@ -160,9 +219,11 @@ describe("static shells", () => {
     const outDir = mkdtempSync(join(tmpdir(), "lubanpng-shells-"))
     writeFileSync(join(outDir, "index.html"), indexHtml)
     const written = emitStaticShells(outDir)
-    expect(written).toHaveLength(10)
+    expect(written).toHaveLength(12)
     expect(readdirSync(join(outDir, "shells")).sort()).toEqual(["en", "zh"])
-    expect(readdirSync(join(outDir, "shells", "en")).sort()).toEqual(routes.map((route) => route.en.split("/")[1]).sort())
+    expect(readdirSync(join(outDir, "shells", "en")).sort()).toEqual(
+      [...routes.map((route) => route.en.split("/")[1]), "not-found.html"].sort(),
+    )
   })
 
   it("fails loudly when the built index document is missing", () => {

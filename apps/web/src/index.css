@@ -12,6 +12,10 @@
     min-height: 100dvh;
   }
 
+  html.js [data-static-content] {
+    display: none;
+  }
+
   :focus-visible {
     outline: var(--border-width-rule) solid var(--color-vermilion);
     outline-offset: --spacing(0.5);

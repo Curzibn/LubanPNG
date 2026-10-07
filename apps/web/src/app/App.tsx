@@ -1,3 +1,4 @@
+import { useEffect } from "react"
 import { BrowserRouter, Route, Routes } from "react-router"
 import { I18nProvider } from "../i18n/I18nProvider.tsx"
 import { SiteLayout } from "../components/SiteLayout.tsx"
@@ -39,10 +40,15 @@ export const AppRoutes = () => (
   </SessionProvider>
 )
 
-export const App = () => (
-  <BrowserRouter>
-    <I18nProvider>
-      <AppRoutes />
-    </I18nProvider>
-  </BrowserRouter>
-)
+export const App = () => {
+  useEffect(() => {
+    document.querySelector("[data-static-content]")?.remove()
+  }, [])
+  return (
+    <BrowserRouter>
+      <I18nProvider>
+        <AppRoutes />
+      </I18nProvider>
+    </BrowserRouter>
+  )
+}
