@@ -30,7 +30,7 @@ export const zhCN = {
   "footer.source": "开源于 GitHub · Curzibn/LubanPNG",
 
   "home.eyebrow": "PNG · JPEG · GIF · WebP · AVIF 在线压缩",
-  "home.title": "免费图片无损压缩",
+  "home.title": "免费图片智能压缩",
   "home.quota.anonymous.lead": "今日免费次数已用完。",
   "home.quota.anonymous.action": "登录后继续用",
   "home.quota.anonymous.body": "注册即每月 50 次，网页、API、CLI 共用同一份额度。",
@@ -422,6 +422,9 @@ export const zhCN = {
   "api.networkError": "网络错误，请检查连接后重试",
   "api.unreadable": "服务暂时不可用，请稍后再试",
   "api.downloadFailed": "下载失败",
+
+  "code.copy": "复制",
+  "code.copied": "已复制",
 
   "notice.close": "关闭提示",
 }
