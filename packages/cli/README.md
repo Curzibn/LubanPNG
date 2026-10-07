@@ -38,6 +38,48 @@ Keys live in your user config directory (`~/.config/lubanpng` on macOS / Linux, 
 
 HEIC: on macOS the CLI converts to JPEG with the system converter before uploading. Other platforms, and `--in-place`, fail with a clear error — export JPEG first.
 
+## Example run
+
+```bash
+$ lubanpng login
+  Paste your API key: lp_live_…
+  Signed in as zibin@example.com · 46 runs left this month
+
+$ lubanpng compress ./images --out ./dist --recursive
+  photo_banner.jpg   2.40 MB → 0.89 MB   -63%
+  logo@2x.png         312 KB →   96 KB   -69%
+  sticker_wave.gif   1.10 MB → 0.71 MB   -36%
+  3 images, saved 2.11 MB, 43 runs left this month
+
+$ lubanpng compress ./hero.png --convert webp
+  hero.png           1.20 MB → 0.31 MB   -74%   → hero.webp
+  1 image, saved 0.89 MB, 41 runs left this month, 1 converted
+
+$ lubanpng usage
+  Free plan · used 7 / 50 this month · resets Oct 1
+```
+
+## REST API
+
+The CLI speaks the same API — three requests wire it into any language or pipeline:
+
+```bash
+# 1. Upload and queue a compression
+curl -X POST https://lubanpng.wizthink.cn/v1/images/compress \
+  -H "Authorization: Bearer lp_live_…" \
+  -F "file=@photo.png"
+# → { "code": 0, "data": { "task_id": "550e8400-…" } }
+
+# 2. Poll the result — wait holds the request for up to 30 seconds
+curl "https://lubanpng.wizthink.cn/v1/images/compress/550e8400-…?wait=30" \
+  -H "Authorization: Bearer lp_live_…"
+
+# 3. Download the compressed file
+curl -o photo.min.jpg "https://lubanpng.wizthink.cn/v1/images/download/550e8400-….jpg"
+```
+
+Create an API key in the dashboard: https://lubanpng.wizthink.cn/dashboard — full reference: https://lubanpng.wizthink.cn/developers
+
 ## Development
 
 ```bash
