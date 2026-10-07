@@ -92,6 +92,11 @@ describe("platform verification files", () => {
       expect(content.trim()).toBe(`google-site-verification: ${name}`)
     }
   })
+
+  it("ships the Bing Webmaster verification file from the site root", () => {
+    const content = readFileSync(join(publicDir, "BingSiteAuth.xml"), "utf8")
+    expect(content).toMatch(/<users>[\s\S]*<user>[0-9A-Za-z-]+<\/user>[\s\S]*<\/users>/)
+  })
 })
 
 describe("llms.txt", () => {
