@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs"
+import { readFileSync, readdirSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
@@ -36,7 +36,22 @@ describe("sitemap", () => {
     }
     expect(sitemap).toContain('xmlns:xhtml="http://www.w3.org/1999/xhtml"')
   })
+
+  it("carries one shared lastmod date on every entry", () => {
+    const dates = Array.from(sitemap.matchAll(/<lastmod>([^<]+)<\/lastmod>/g), (match) => match[1])
+    expect(dates).toHaveLength(10)
+    for (const date of dates) expect(date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(new Set(dates).size).toBe(1)
+  })
 })
+
+const robotsGroups = robots
+  .split(/\n\s*\n/)
+  .map((block) => block.trim())
+  .filter((block) => block.length > 0)
+
+const groupFor = (agent: string): string | undefined =>
+  robotsGroups.find((block) => block.split("\n").includes(`User-agent: ${agent}`))
 
 describe("robots", () => {
   it("keeps the private pages out of the index in both languages", () => {
@@ -44,6 +59,38 @@ describe("robots", () => {
       expect(robots).toContain(`Disallow: ${path}\n`)
     }
     expect(robots).toContain("Sitemap: https://lubanpng.wizthink.cn/sitemap.xml")
+  })
+
+  it("explicitly welcomes the search and AI crawlers with the same private-page rules", () => {
+    for (const agent of [
+      "Googlebot",
+      "Bingbot",
+      "Baiduspider",
+      "GPTBot",
+      "ClaudeBot",
+      "PerplexityBot",
+      "Google-Extended",
+      "CCBot",
+    ]) {
+      const group = groupFor(agent)
+      expect(group, `missing user-agent group for ${agent}`).toBeDefined()
+      const lines = group!.split("\n")
+      expect(lines, `${agent} must allow the public site`).toContain("Allow: /")
+      for (const path of ["/dashboard", "/login", "/en/dashboard", "/en/login"]) {
+        expect(lines, `${agent} must keep ${path} out`).toContain(`Disallow: ${path}`)
+      }
+    }
+  })
+})
+
+describe("platform verification files", () => {
+  it("ships Google Search Console verification files from the site root", () => {
+    const files = readdirSync(publicDir).filter((name) => /^google[a-z0-9]+\.html$/.test(name))
+    expect(files.length).toBeGreaterThan(0)
+    for (const name of files) {
+      const content = readFileSync(join(publicDir, name), "utf8")
+      expect(content.trim()).toBe(`google-site-verification: ${name}`)
+    }
   })
 })
 

@@ -5,4 +5,60 @@ Disallow: /login
 Disallow: /en/dashboard
 Disallow: /en/login
 
+User-agent: Googlebot
+Allow: /
+Disallow: /dashboard
+Disallow: /login
+Disallow: /en/dashboard
+Disallow: /en/login
+
+User-agent: Bingbot
+Allow: /
+Disallow: /dashboard
+Disallow: /login
+Disallow: /en/dashboard
+Disallow: /en/login
+
+User-agent: Baiduspider
+Allow: /
+Disallow: /dashboard
+Disallow: /login
+Disallow: /en/dashboard
+Disallow: /en/login
+
+User-agent: GPTBot
+Allow: /
+Disallow: /dashboard
+Disallow: /login
+Disallow: /en/dashboard
+Disallow: /en/login
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /dashboard
+Disallow: /login
+Disallow: /en/dashboard
+Disallow: /en/login
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /dashboard
+Disallow: /login
+Disallow: /en/dashboard
+Disallow: /en/login
+
+User-agent: Google-Extended
+Allow: /
+Disallow: /dashboard
+Disallow: /login
+Disallow: /en/dashboard
+Disallow: /en/login
+
+User-agent: CCBot
+Allow: /
+Disallow: /dashboard
+Disallow: /login
+Disallow: /en/dashboard
+Disallow: /en/login
+
 Sitemap: https://lubanpng.wizthink.cn/sitemap.xml
