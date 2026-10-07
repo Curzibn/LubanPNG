@@ -26,7 +26,7 @@ afterAll(() => {
 })
 
 const chineseRoutes: ReadonlyArray<readonly [string, string]> = [
-  ["/", "把图片变小，免费。"],
+  ["/", "免费图片无损压缩"],
   ["/pricing", "一个额度池，三个入口"],
   ["/developers", "开发者"],
   ["/login", "登录或注册"],
@@ -37,7 +37,7 @@ const chineseRoutes: ReadonlyArray<readonly [string, string]> = [
 ]
 
 const englishRoutes: ReadonlyArray<readonly [string, string]> = [
-  ["/en/", "Make images smaller — free."],
+  ["/en/", "Free lossless image compression"],
   ["/en/pricing", "One quota pool, three doors"],
   ["/en/developers", "Developers"],
   ["/en/login", "Sign in or sign up"],
@@ -61,6 +61,6 @@ describe("localized rendering", () => {
   })
 
   it.each(chineseRoutes)("leaves no English marketing copy on %s", (path) => {
-    expect(render(path)).not.toContain("Make images smaller — free.")
+    expect(render(path)).not.toContain("Free lossless image compression")
   })
 })

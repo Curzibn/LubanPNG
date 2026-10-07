@@ -30,7 +30,7 @@ export const zhCN = {
   "footer.source": "开源于 GitHub · Curzibn/LubanPNG",
 
   "home.eyebrow": "PNG · JPEG · GIF · WebP · AVIF 在线压缩",
-  "home.title": "把图片变小，免费。",
+  "home.title": "免费图片无损压缩",
   "home.quota.anonymous.lead": "今日免费次数已用完。",
   "home.quota.anonymous.action": "登录后继续用",
   "home.quota.anonymous.body": "注册即每月 50 次，网页、API、CLI 共用同一份额度。",

@@ -32,7 +32,7 @@ export const en: Messages = {
   "footer.source": "Open source on GitHub · Curzibn/LubanPNG",
 
   "home.eyebrow": "PNG · JPEG · GIF · WebP · AVIF online compression",
-  "home.title": "Make images smaller — free.",
+  "home.title": "Free lossless image compression",
   "home.quota.anonymous.lead": "Today's free runs are used up.",
   "home.quota.anonymous.action": "Sign in to keep going",
   "home.quota.anonymous.body": "Signing up gives you 50 runs a month, shared across the web app, API and CLI.",
