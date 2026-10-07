@@ -9,7 +9,8 @@
     "build": "pnpm --filter @lubanpng/design-tokens generate && pnpm --filter @lubanpng/web build",
     "dev": "pnpm --filter @lubanpng/design-tokens generate && pnpm --filter @lubanpng/web dev",
     "test": "pnpm -r run test",
-    "lint": "pnpm -r run lint"
+    "lint": "pnpm -r run lint",
+    "indexnow": "node scripts/indexnow.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

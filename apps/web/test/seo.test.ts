@@ -83,6 +83,15 @@ describe("robots", () => {
   })
 })
 
+describe("IndexNow", () => {
+  it("ships exactly one key file whose content matches its own name", () => {
+    const files = readdirSync(publicDir).filter((name) => /^[a-f0-9]{8,128}\.txt$/.test(name))
+    expect(files).toHaveLength(1)
+    const name = files[0]!
+    expect(readFileSync(join(publicDir, name), "utf8").trim()).toBe(name.replace(/\.txt$/, ""))
+  })
+})
+
 describe("platform verification files", () => {
   it("ships Google Search Console verification files from the site root", () => {
     const files = readdirSync(publicDir).filter((name) => /^google[a-z0-9]+\.html$/.test(name))
