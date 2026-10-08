@@ -10,7 +10,8 @@
     "dev": "pnpm --filter @lubanpng/design-tokens generate && pnpm --filter @lubanpng/web dev",
     "test": "pnpm -r run test",
     "lint": "pnpm -r run lint",
-    "indexnow": "node scripts/indexnow.mjs"
+    "indexnow": "node scripts/indexnow.mjs",
+    "baidu-push": "node scripts/baidu-push.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
