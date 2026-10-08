@@ -49,6 +49,8 @@ spec:
               value: "2"
             - name: APP_WEB__STATIC_DIR
               value: /app/web
+            - name: APP_WEB__BAIDU_SITE_VERIFICATION
+              value: codeva-OijnsGc05a
             - name: APP_STORAGE__ENDPOINT
               value: http://opusstore.opus-storage.svc:9000
             - name: APP_STORAGE__PUBLIC_ENDPOINT
