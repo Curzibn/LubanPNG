@@ -13,7 +13,7 @@ if (urls.length === 0) {
   process.exit(1)
 }
 
-const endpoint = `${ENDPOINT}?site=${encodeURIComponent(SITE_ORIGIN)}&token=${encodeURIComponent(token)}`
+const endpoint = `${ENDPOINT}?site=${SITE_ORIGIN}&token=${encodeURIComponent(token)}`
 const response = await fetch(endpoint, {
   method: "POST",
   headers: { "content-type": "text/plain" },
