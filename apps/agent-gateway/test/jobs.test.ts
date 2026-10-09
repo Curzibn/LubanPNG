@@ -108,3 +108,36 @@ describe("wait budget", () => {
     }
   }, 10_000);
 });
+
+describe("subject cookie continuity", () => {
+  test("polls with the cookie issued at submission", async () => {
+    const seenCookies: Array<string | null> = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const headers = new Headers(init?.headers);
+      seenCookies.push(headers.get("cookie"));
+      if (url.includes("/v1/images/compress/")) {
+        return new Response(JSON.stringify({ code: 0, msg: "success", data: task({}) }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ code: 0, msg: "success", data: { task_id: "t1" } }), {
+        status: 200,
+        headers: { "content-type": "application/json", "set-cookie": "lp_device=dev-1; Path=/; HttpOnly" },
+      });
+    }) as unknown as typeof fetch;
+    try {
+      const { runCompress } = await import("../src/jobs.ts");
+      const LubanPngClient = (await import("../src/lubanpng-client.ts")).LubanPngClient;
+      const client = new LubanPngClient(config);
+      const outcome = await runCompress(client, config, { data: new Uint8Array([1]), filename: "a.png" }, { session: {} });
+      expect(outcome.task.status).toBe("completed");
+      expect(seenCookies[0]).toBeNull();
+      expect(seenCookies[1]).toBe("lp_device=dev-1");
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+});

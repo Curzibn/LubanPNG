@@ -91,14 +91,14 @@ async function waitForTask(
   client: LubanPngClient,
   config: GatewayConfig,
   taskId: string,
-  options: RequestOptions,
+  snapshot: () => RequestOptions,
   onCookie?: (cookie: string) => void,
   budgetMs?: number,
 ): Promise<{ task: TaskView; quotaRemaining?: number; timedOut: boolean }> {
   const deadline = Date.now() + (budgetMs ?? config.upstreamTimeoutMs);
-  let current = await client.taskStatus(taskId, config.statusWaitMaxSeconds, options, onCookie);
+  let current = await client.taskStatus(taskId, config.statusWaitMaxSeconds, snapshot(), onCookie);
   while (isRunning(current.data) && Date.now() < deadline) {
-    current = await client.taskStatus(taskId, config.statusWaitMaxSeconds, options, onCookie);
+    current = await client.taskStatus(taskId, config.statusWaitMaxSeconds, snapshot(), onCookie);
   }
   return { task: current.data, quotaRemaining: current.quota.remaining, timedOut: isRunning(current.data) };
 }
@@ -106,13 +106,22 @@ async function waitForTask(
 export async function submitAndWait(
   config: GatewayConfig,
   client: LubanPngClient,
-  submit: (options: RequestOptions) => Promise<{ task_id: string }>,
+  submit: (options: RequestOptions, onCookie: (cookie: string) => void) => Promise<{ task_id: string }>,
   options: RequestOptions,
   onCookie?: (cookie: string) => void,
   budgetMs?: number,
 ): Promise<JobOutcome> {
-  const submitted = await submit(options);
-  const settled = await waitForTask(client, config, submitted.task_id, options, onCookie, budgetMs);
+  let latestCookie = options.session.cookie;
+  const capture = (cookie: string): void => {
+    latestCookie = cookie;
+    if (onCookie) onCookie(cookie);
+  };
+  const snapshot = (): RequestOptions => ({
+    ...options,
+    session: { ...options.session, cookie: latestCookie },
+  });
+  const submitted = await submit(snapshot(), capture);
+  const settled = await waitForTask(client, config, submitted.task_id, snapshot, capture, budgetMs);
   return {
     task: settled.task,
     billable: isBillable(settled.task),
@@ -133,7 +142,7 @@ export function runCompress(
   return submitAndWait(
     config,
     client,
-    (opts) => client.compress(input, opts, onCookie).then((result) => result.data),
+    (opts, capture) => client.compress(input, opts, capture).then((result) => result.data),
     options,
     onCookie,
     budgetMs,
@@ -151,7 +160,7 @@ export function runUpscale(
   return submitAndWait(
     config,
     client,
-    (opts) => client.upscale(input, opts, onCookie).then((result) => result.data),
+    (opts, capture) => client.upscale(input, opts, capture).then((result) => result.data),
     options,
     onCookie,
     budgetMs,
