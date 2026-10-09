@@ -131,11 +131,16 @@ function mePayload(): Record<string, unknown> {
 
 describe("limits and error reporting", () => {
   test("a full MCP session is reported as a session limit, not an upstream reset", async () => {
-    const restore = mockUpstream((url) =>
-      url.includes("/v1/images/compress/")
+    const restore = mockUpstream((url) => {
+      if (url.includes("/v1/me")) {
+        return jsonResponse({ code: 0, msg: "success", data: mePayload() }, 200, {
+          "set-cookie": "lp_device=dev-1; Path=/; HttpOnly",
+        });
+      }
+      return url.includes("/v1/images/compress/")
         ? jsonResponse({ code: 0, msg: "success", data: completedCompressTask() })
-        : jsonResponse({ code: 0, msg: "success", data: { task_id: "t1" } }),
-    );
+        : jsonResponse({ code: 0, msg: "success", data: { task_id: "t1" } });
+    });
     try {
       const { client } = await startClient();
       for (let i = 0; i < 5; i += 1) {
@@ -162,13 +167,18 @@ describe("limits and error reporting", () => {
   });
 
   test("an upstream 429 keeps its own message and retry hint", async () => {
-    const restore = mockUpstream(() =>
-      jsonResponse(
+    const restore = mockUpstream((url) => {
+      if (url.includes("/v1/me")) {
+        return jsonResponse({ code: 0, msg: "success", data: mePayload() }, 200, {
+          "set-cookie": "lp_device=dev-1; Path=/; HttpOnly",
+        });
+      }
+      return jsonResponse(
         { code: 4004, msg: "upscale queue is full; try again later", data: { queue_depth: 10 } },
         429,
         { "retry-after": "30" },
-      ),
-    );
+      );
+    });
     try {
       const { client } = await startClient();
       const denied = await client.callTool({
@@ -189,7 +199,9 @@ describe("limits and error reporting", () => {
   test("check_quota separates the upstream quota from the session allowance", async () => {
     const restore = mockUpstream((url) => {
       if (url.includes("/v1/me")) {
-        return jsonResponse({ code: 0, msg: "success", data: mePayload() });
+        return jsonResponse({ code: 0, msg: "success", data: mePayload() }, 200, {
+          "set-cookie": "lp_device=dev-1; Path=/; HttpOnly",
+        });
       }
       return jsonResponse({ code: 0, msg: "success", data: {} });
     });
@@ -273,6 +285,99 @@ describe("limits and error reporting", () => {
       expect([...submitCookies].sort()).toEqual(["lp_device=dev-1", "lp_device=dev-2"]);
       await one.client.close();
       await two.client.close();
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  test("a failed subject preparation aborts without submitting and can recover", async () => {
+    let meCalls = 0;
+    let meHealthy = false;
+    const submitted: Array<string | null> = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const cookie = new Headers(init?.headers).get("cookie");
+      if (url.includes("/v1/me")) {
+        meCalls += 1;
+        if (!meHealthy) return jsonResponse({ code: 2001, msg: "subject backend down" }, 500);
+        return jsonResponse({ code: 0, msg: "success", data: mePayload() }, 200, {
+          "set-cookie": "lp_device=dev-1; Path=/; HttpOnly",
+        });
+      }
+      if (url.includes("/v1/images/compress/")) {
+        return jsonResponse({ code: 0, msg: "success", data: completedCompressTask() });
+      }
+      submitted.push(cookie);
+      return jsonResponse({ code: 0, msg: "success", data: { task_id: "t1" } });
+    }) as unknown as typeof fetch;
+    try {
+      const { client } = await startClient();
+      const failed = await Promise.all([
+        client.callTool({ name: "compress_image", arguments: { image_base64: TINY_BASE64, filename: "f1.png" } }),
+        client.callTool({ name: "compress_image", arguments: { image_base64: TINY_BASE64, filename: "f2.png" } }),
+      ]);
+      expect(failed[0].isError).toBe(true);
+      expect(failed[1].isError).toBe(true);
+      expect(textOf(failed[0])).toContain("Could not prepare the upstream subject");
+      expect(textOf(failed[0])).toContain("not sent");
+      expect(submitted).toHaveLength(0);
+
+      meHealthy = true;
+      const recovered = await Promise.all([
+        client.callTool({ name: "compress_image", arguments: { image_base64: TINY_BASE64, filename: "r1.png" } }),
+        client.callTool({ name: "compress_image", arguments: { image_base64: TINY_BASE64, filename: "r2.png" } }),
+      ]);
+      expect(recovered[0].isError ?? false).toBe(false);
+      expect(recovered[1].isError ?? false).toBe(false);
+      expect(meCalls).toBe(2);
+      expect(submitted).toEqual(["lp_device=dev-1", "lp_device=dev-1"]);
+
+      for (let i = 0; i < 3; i += 1) {
+        const extra = await client.callTool({ name: "compress_image", arguments: { image_base64: TINY_BASE64, filename: `r${i + 3}.png` } });
+        expect(extra.isError ?? false).toBe(false);
+      }
+      const denied = await client.callTool({ name: "compress_image", arguments: { image_base64: TINY_BASE64, filename: "over.png" } });
+      expect(denied.isError).toBe(true);
+      expect(textOf(denied)).toContain("call allowance");
+      await client.close();
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  test("a preparation without a device credential aborts and can retry", async () => {
+    let meCalls = 0;
+    const submitted: Array<string | null> = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const cookie = new Headers(init?.headers).get("cookie");
+      if (url.includes("/v1/me")) {
+        meCalls += 1;
+        const headers: Record<string, string> = {};
+        if (meCalls > 1) headers["set-cookie"] = "lp_device=dev-1; Path=/; HttpOnly";
+        return jsonResponse({ code: 0, msg: "success", data: mePayload() }, 200, headers);
+      }
+      if (url.includes("/v1/images/compress/")) {
+        return jsonResponse({ code: 0, msg: "success", data: completedCompressTask() });
+      }
+      submitted.push(cookie);
+      return jsonResponse({ code: 0, msg: "success", data: { task_id: "t1" } });
+    }) as unknown as typeof fetch;
+    try {
+      const { client } = await startClient();
+      const first = await client.callTool({ name: "compress_image", arguments: { image_base64: TINY_BASE64, filename: "n1.png" } });
+      expect(first.isError).toBe(true);
+      expect(textOf(first)).toContain("Could not prepare the upstream subject");
+      expect(textOf(first)).toContain("did not issue a device credential");
+      expect(submitted).toHaveLength(0);
+
+      const second = await client.callTool({ name: "compress_image", arguments: { image_base64: TINY_BASE64, filename: "n2.png" } });
+      expect(second.isError ?? false).toBe(false);
+      expect(meCalls).toBe(2);
+      expect(submitted).toEqual(["lp_device=dev-1"]);
+      await client.close();
     } finally {
       globalThis.fetch = original;
     }

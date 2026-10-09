@@ -188,17 +188,17 @@ export function buildServer(deps: GatewayDeps): McpServer {
     if (!state.subjectPrep) {
       state.subjectPrep = client
         .me(optionsFor(extra), (cookie) => bindCookie(extra, cookie))
-        .then(() => undefined)
+        .then(() => {
+          if (!state.cookie) throw new Error("the upstream did not issue a device credential");
+          return undefined;
+        })
         .catch((error: unknown) => {
           state.subjectPrep = undefined;
-          throw error;
+          const cause = error instanceof Error ? error.message : String(error);
+          throw new Error(`Could not prepare the upstream subject for this session; the call was not sent. (${cause})`);
         });
     }
-    try {
-      await state.subjectPrep;
-    } catch {
-      // The tool call continues and may establish a subject through its own request.
-    }
+    await state.subjectPrep;
   };
 
   const reserveOrFail = (extra: Extra, kind: TaskKind) => {
@@ -254,9 +254,9 @@ export function buildServer(deps: GatewayDeps): McpServer {
     async (args, extra) => {
       const denied = reserveOrFail(extra, "compress");
       if (denied) return denied;
-      await ensureSessionSubject(extra);
       const sessionId = sessionIdOf(extra);
       try {
+        await ensureSessionSubject(extra);
         const outcome = await runCompress(
           client,
           config,
@@ -295,9 +295,9 @@ export function buildServer(deps: GatewayDeps): McpServer {
     async (args, extra) => {
       const denied = reserveOrFail(extra, "upscale");
       if (denied) return denied;
-      await ensureSessionSubject(extra);
       const sessionId = sessionIdOf(extra);
       try {
+        await ensureSessionSubject(extra);
         const outcome = await runUpscale(
           client,
           config,
