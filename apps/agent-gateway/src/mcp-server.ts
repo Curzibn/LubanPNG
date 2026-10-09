@@ -182,6 +182,25 @@ export function buildServer(deps: GatewayDeps): McpServer {
     sessions.bindCookie(sessionIdOf(extra), cookie);
   };
 
+  const ensureSessionSubject = async (extra: Extra): Promise<void> => {
+    const state = sessions.session(sessionIdOf(extra));
+    if (state.cookie || state.apiKey) return;
+    if (!state.subjectPrep) {
+      state.subjectPrep = client
+        .me(optionsFor(extra), (cookie) => bindCookie(extra, cookie))
+        .then(() => undefined)
+        .catch((error: unknown) => {
+          state.subjectPrep = undefined;
+          throw error;
+        });
+    }
+    try {
+      await state.subjectPrep;
+    } catch {
+      // The tool call continues and may establish a subject through its own request.
+    }
+  };
+
   const reserveOrFail = (extra: Extra, kind: TaskKind) => {
     const sessionId = sessionIdOf(extra);
     const verdict = sessions.reserve(sessionId, kind);
@@ -235,6 +254,7 @@ export function buildServer(deps: GatewayDeps): McpServer {
     async (args, extra) => {
       const denied = reserveOrFail(extra, "compress");
       if (denied) return denied;
+      await ensureSessionSubject(extra);
       const sessionId = sessionIdOf(extra);
       try {
         const outcome = await runCompress(
@@ -275,6 +295,7 @@ export function buildServer(deps: GatewayDeps): McpServer {
     async (args, extra) => {
       const denied = reserveOrFail(extra, "upscale");
       if (denied) return denied;
+      await ensureSessionSubject(extra);
       const sessionId = sessionIdOf(extra);
       try {
         const outcome = await runUpscale(
@@ -311,6 +332,7 @@ export function buildServer(deps: GatewayDeps): McpServer {
     async (_args, extra) => {
       const state = sessions.session(sessionIdOf(extra));
       try {
+        await ensureSessionSubject(extra);
         const me = await client.me(optionsFor(extra), (cookie) => bindCookie(extra, cookie));
         const payload = {
           subject: me.data.subject,
@@ -351,6 +373,7 @@ export function buildServer(deps: GatewayDeps): McpServer {
     },
     async (args, extra) => {
       try {
+        await ensureSessionSubject(extra);
         if (args.task_id) {
           const task = await client.taskStatus(args.task_id, 0, optionsFor(extra), (cookie) => bindCookie(extra, cookie));
           const url = downloadUrlFor(client, task.data);

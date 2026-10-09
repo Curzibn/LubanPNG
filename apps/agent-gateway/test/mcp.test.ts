@@ -105,6 +105,30 @@ function completedCompressTask(): Record<string, unknown> {
   };
 }
 
+function mePayload(): Record<string, unknown> {
+  return {
+    subject: "device",
+    email: null,
+    plan: {
+      id: "anonymous",
+      name: "anonymous",
+      period: "day",
+      quota: 5,
+      max_file_size: 5242880,
+      retention_hours: 24,
+      max_api_keys: 0,
+    },
+    quota: {
+      period_key: "2026-10-09",
+      limit: 5,
+      used: 1,
+      held: 0,
+      remaining: 4,
+      resets_at: "2026-10-09T16:00:00Z",
+    },
+  };
+}
+
 describe("limits and error reporting", () => {
   test("a full MCP session is reported as a session limit, not an upstream reset", async () => {
     const restore = mockUpstream((url) =>
@@ -165,31 +189,7 @@ describe("limits and error reporting", () => {
   test("check_quota separates the upstream quota from the session allowance", async () => {
     const restore = mockUpstream((url) => {
       if (url.includes("/v1/me")) {
-        return jsonResponse({
-          code: 0,
-          msg: "success",
-          data: {
-            subject: "device",
-            email: null,
-            plan: {
-              id: "anonymous",
-              name: "anonymous",
-              period: "day",
-              quota: 5,
-              max_file_size: 5242880,
-              retention_hours: 24,
-              max_api_keys: 0,
-            },
-            quota: {
-              period_key: "2026-10-09",
-              limit: 5,
-              used: 1,
-              held: 0,
-              remaining: 4,
-              resets_at: "2026-10-09T16:00:00Z",
-            },
-          },
-        });
+        return jsonResponse({ code: 0, msg: "success", data: mePayload() });
       }
       return jsonResponse({ code: 0, msg: "success", data: {} });
     });
@@ -203,6 +203,41 @@ describe("limits and error reporting", () => {
       await client.close();
     } finally {
       restore();
+    }
+  });
+
+  test("concurrent first calls in one session share a single upstream subject", async () => {
+    let meCalls = 0;
+    const submitCookies: Array<string | null> = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const cookie = new Headers(init?.headers).get("cookie");
+      if (url.includes("/v1/me")) {
+        meCalls += 1;
+        return jsonResponse({ code: 0, msg: "success", data: mePayload() }, 200, {
+          "set-cookie": "lp_device=dev-1; Path=/; HttpOnly",
+        });
+      }
+      if (url.includes("/v1/images/compress/")) {
+        return jsonResponse({ code: 0, msg: "success", data: completedCompressTask() });
+      }
+      submitCookies.push(cookie);
+      return jsonResponse({ code: 0, msg: "success", data: { task_id: "t1" } });
+    }) as unknown as typeof fetch;
+    try {
+      const { client } = await startClient();
+      const [first, second] = await Promise.all([
+        client.callTool({ name: "compress_image", arguments: { image_base64: TINY_BASE64, filename: "c1.png" } }),
+        client.callTool({ name: "compress_image", arguments: { image_base64: TINY_BASE64, filename: "c2.png" } }),
+      ]);
+      expect(first.isError ?? false).toBe(false);
+      expect(second.isError ?? false).toBe(false);
+      expect(meCalls).toBe(1);
+      expect(submitCookies).toEqual(["lp_device=dev-1", "lp_device=dev-1"]);
+      await client.close();
+    } finally {
+      globalThis.fetch = original;
     }
   });
 });

@@ -6,6 +6,7 @@ export interface SessionState {
   sessionId: string;
   cookie?: string;
   apiKey?: string;
+  subjectPrep?: Promise<void>;
   pending: Record<TaskKind, number>;
   consumed: Record<TaskKind, number>;
   createdAt: number;
