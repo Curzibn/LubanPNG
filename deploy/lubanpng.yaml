@@ -120,13 +120,6 @@ spec:
                 name: lubanpng-agent
                 port:
                   name: http
-          - path: /v1/agent
-            pathType: Prefix
-            backend:
-              service:
-                name: lubanpng-agent
-                port:
-                  name: http
           - path: /
             pathType: Prefix
             backend:

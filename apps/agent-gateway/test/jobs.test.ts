@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { jobPayload } from "../src/jobs.ts";
-import { settlementAmount } from "../src/x402.ts";
 import type { TaskView } from "../src/lubanpng-client.ts";
 import { testConfig } from "./helpers.ts";
 
@@ -23,15 +22,6 @@ function task(overrides: Partial<TaskView>): TaskView {
     ...overrides,
   };
 }
-
-describe("settlementAmount", () => {
-  test("bills the agreed price only for billable work", () => {
-    expect(settlementAmount(config, "compress", true)).toBe("$0.003");
-    expect(settlementAmount(config, "compress", false)).toBe("0");
-    expect(settlementAmount(config, "upscale", true)).toBe("$0.015");
-    expect(settlementAmount(config, "upscale", false)).toBe("0");
-  });
-});
 
 describe("jobPayload", () => {
   test("reports savings ratio and the download link for a billable result", () => {
@@ -70,15 +60,6 @@ describe("jobPayload", () => {
   });
 });
 
-describe("settlement amount for the paid channel", () => {
-  test("charges the settled price for billable work and zero otherwise", () => {
-    expect(settlementAmount(config, "compress", true)).toBe("$0.003");
-    expect(settlementAmount(config, "compress", false)).toBe("0");
-    expect(settlementAmount(config, "upscale", true)).toBe("$0.015");
-    expect(settlementAmount(config, "upscale", false)).toBe("0");
-  });
-});
-
 describe("runCompress billing", () => {
   test("waits for a running task, then reports no_gain as non billable", async () => {
     const { runCompress } = await import("../src/jobs.ts");
@@ -105,7 +86,7 @@ describe("runCompress billing", () => {
   });
 });
 
-describe("paid channel wait budget", () => {
+describe("wait budget", () => {
   test("a job still running at the deadline is not billed", async () => {
     const { runCompress } = await import("../src/jobs.ts");
     const original = globalThis.fetch;
@@ -122,7 +103,6 @@ describe("paid channel wait budget", () => {
       const outcome = await runCompress(client, config, { data: new Uint8Array([1]), filename: "a.png" }, { session: {} }, undefined, 1);
       expect(outcome.timedOut).toBe(true);
       expect(outcome.billable).toBe(false);
-      expect(settlementAmount(config, "compress", outcome.billable)).toBe("0");
     } finally {
       globalThis.fetch = original;
     }

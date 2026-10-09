@@ -72,24 +72,6 @@ describe("SessionRegistry", () => {
     now += 500;
     expect(registry.activeSessionCount()).toBe(0);
   });
-
-  test("payer cookie is cached per payer address", () => {
-    const registry = new SessionRegistry(testConfig());
-    registry.bindPayerCookie("0xABC", "lp_device=one");
-    expect(registry.payer("0xabc").cookie).toBe("lp_device=one");
-    registry.bindPayerCookie("0xabc", "lp_device=two");
-    expect(registry.payer("0xABC").cookie).toBe("lp_device=two");
-    expect(registry.payerCount()).toBe(1);
-  });
-
-  test("x402 daily counters are independent per kind", () => {
-    const registry = new SessionRegistry(testConfig());
-    registry.noteX402Call("compress");
-    registry.noteX402Call("compress");
-    registry.noteX402Call("upscale");
-    expect(registry.x402DailyUsed("compress")).toBe(2);
-    expect(registry.x402DailyUsed("upscale")).toBe(1);
-  });
 });
 
 describe("loadConfig", () => {
@@ -98,7 +80,5 @@ describe("loadConfig", () => {
     expect(config.sessionQuotaLimit).toBe(5);
     expect(config.sessionUpscaleLimit).toBe(1);
     expect(config.globalAnonymousDailyLimit).toBe(10_000);
-    expect(config.x402Network).toBe("eip155:84532");
-    expect(config.x402FacilitatorUrl).toBe("https://x402.org/facilitator");
   });
 });

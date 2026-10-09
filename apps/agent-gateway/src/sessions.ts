@@ -53,15 +53,12 @@ class DailyCounter {
 export class SessionRegistry {
   private readonly sessions = new Map<string, SessionState>();
   private readonly anonymousDaily: DailyCounter;
-  private readonly x402Daily: Record<TaskKind, DailyCounter>;
-  private readonly payers = new Map<string, PayerSubject>();
 
   constructor(
     private readonly config: GatewayConfig,
     private readonly now: () => number = Date.now,
   ) {
     this.anonymousDaily = new DailyCounter(now);
-    this.x402Daily = { compress: new DailyCounter(now), upscale: new DailyCounter(now) };
   }
 
   session(sessionId: string): SessionState {
@@ -128,41 +125,12 @@ export class SessionRegistry {
     return this.sessions.size;
   }
 
-  payer(address: string): PayerSubject {
-    const key = address.toLowerCase();
-    const existing = this.payers.get(key);
-    if (existing) return existing;
-    const created: PayerSubject = {};
-    this.payers.set(key, created);
-    return created;
-  }
-
-  bindPayerCookie(address: string, cookie: string): void {
-    this.payer(address).cookie = cookie;
-  }
-
-  noteX402Call(kind: TaskKind): number {
-    return this.x402Daily[kind].hit();
-  }
-
-  x402DailyUsed(kind: TaskKind): number {
-    return this.x402Daily[kind].value();
-  }
-
-  payerCount(): number {
-    return this.payers.size;
-  }
-
   private evictExpired(): void {
     const cutoff = this.now() - this.config.sessionTtlMs;
     for (const [id, state] of this.sessions) {
       if (state.lastSeenAt < cutoff) this.sessions.delete(id);
     }
   }
-}
-
-export interface PayerSubject {
-  cookie?: string;
 }
 
 export function newSessionId(): string {

@@ -71,22 +71,3 @@ describe("mcp endpoint", () => {
     await client.close();
   });
 });
-
-describe("paid endpoints", () => {
-  test("returns 402 with a PAYMENT-REQUIRED challenge", async () => {
-    const { handlePaid } = await import("../src/main.ts");
-    const request = new Request(`${BASE}/v1/agent/compress`, { method: "POST" });
-    const response = await handlePaid(request, "compress");
-    expect(response.status).toBe(402);
-    const header = response.headers.get("payment-required");
-    expect(header).toBeTruthy();
-    const decoded = JSON.parse(Buffer.from(header as string, "base64").toString("utf8"));
-    expect(decoded.accepts[0].scheme).toBe("upto");
-    expect(decoded.accepts[0].network).toBe("eip155:84532");
-    expect(decoded.accepts[0].amount).toBe("5000");
-    expect(decoded.accepts[0].asset).toBe("0x036CbD53842c5426634e7929541eC2318f3dCF7e");
-    expect(decoded.accepts[0].payTo).toBeTruthy();
-    expect(decoded.accepts[0].extra.assetTransferMethod).toBe("permit2");
-    expect(decoded.extensions.bazaar).toBeTruthy();
-  }, 60_000);
-});

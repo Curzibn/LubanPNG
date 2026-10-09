@@ -35,7 +35,7 @@ const COMPRESS_DESCRIPTION = [
   "One call submits the job, waits for it to finish and returns the result with a download link.",
   "Billing: a job is charged only when it produces a smaller file (convert adds one extra unit). A result that is not smaller is reported with no_gain=true and costs nothing; failed jobs are free.",
   "Compressed output is kept for 24 hours; call get_task to fetch the download link again.",
-  "If the session runs out of calls, the error explains how to continue: wait for the daily reset, configure an lp_api_key, or use the pay-per-use endpoint.",
+  "If the session runs out of calls, the error explains how to continue: retry after the reset reported by check_quota, or configure an lp_api_key.",
 ].join(" ");
 
 function ok(text: string, structured?: Record<string, unknown>) {
@@ -53,11 +53,10 @@ function fail(text: string, structured?: Record<string, unknown>) {
   };
 }
 
-function upgradeHint(config: GatewayConfig): string {
+function quotaHint(config: GatewayConfig): string {
   return [
-    `Options: (a) retry after the reset time shown by check_quota,`,
-    `(b) configure the MCP server with an lp_api_key to use that account's monthly quota (register at ${config.publicBaseUrl}),`,
-    `(c) call the pay-per-use endpoint POST ${config.publicBaseUrl}/v1/agent/compress, which settles on-chain only for successful compressions.`,
+    `Options: (a) retry after the reset time reported by check_quota,`,
+    `(b) configure the MCP server with an lp_api_key to use that account's monthly quota (register at ${config.publicBaseUrl}).`,
   ].join(" ");
 }
 
@@ -68,8 +67,8 @@ function errorPayload(error: unknown, config: GatewayConfig, kind: TaskKind): Re
     if (error.status === 429) {
       message =
         kind === "compress"
-          ? `Quota exhausted for this subject. ${upgradeHint(config)}`
-          : `Upscale quota exhausted for this subject. ${upgradeHint(config)}`;
+          ? `Quota exhausted for this subject. ${quotaHint(config)}`
+          : `Upscale quota exhausted for this subject. ${quotaHint(config)}`;
     } else if (error.status === 413) {
       message = `The file is larger than the allowed upload size: ${error.message}`;
     } else if (error.status === 503) {
@@ -181,11 +180,11 @@ export function buildServer(deps: GatewayDeps): McpServer {
     if (verdict.allowed) return null;
     if (verdict.reason === "anonymous_daily_breaker") {
       return fail(
-        `This gateway's anonymous pool is closed for today (${verdict.limit} calls/day). The pay-per-use endpoint POST ${config.publicBaseUrl}/v1/agent/compress is unaffected.`,
+        `This gateway's anonymous pool is closed for today (${verdict.limit} calls/day). Retry after the daily reset, or configure an lp_api_key to use an account's monthly quota.`,
         { error: { status: 503, code: 2003, message: "anonymous daily breaker tripped", limit: verdict.limit } },
       );
     }
-    const guidance = upgradeHint(config);
+    const guidance = quotaHint(config);
     return fail(
       `This MCP session has used its ${kind} allowance (${verdict.limit}). ${guidance}`,
       {
