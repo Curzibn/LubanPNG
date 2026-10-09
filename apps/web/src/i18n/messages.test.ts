@@ -101,6 +101,11 @@ describe("dictionaries", () => {
     expect(en["dev.agents.mcpStatus"]).toBe("Available")
   })
 
+  it("does not advertise an API-key switch the MCP tools do not offer", () => {
+    expect(zhCN["dev.agents.mcpNote"]).not.toContain("Key")
+    expect(en["dev.agents.mcpNote"]).not.toContain("API key")
+  })
+
   it("never promises a saving the measurements do not support", () => {
     const banned = [/\bhalf or more\b/i, /\bhalve(s|d)?\b/i, /削掉一半/, /缩小一半/, /一半以上/, /无差别/, /肉眼无差/, /no visible difference/i]
     for (const [locale, dictionary] of Object.entries(messages)) {

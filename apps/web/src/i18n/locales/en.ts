@@ -247,7 +247,7 @@ export const en: Messages = {
   "dev.agents.restNote": "Compression and upscaling share the same endpoints and quota; an anonymous cookie works in the browser",
   "dev.agents.mcp": "MCP server",
   "dev.agents.mcpStatus": "Available",
-  "dev.agents.mcpNote": "POST /mcp — compress, upscale, quota and task tools; a small free allowance per session, or bring an API key",
+  "dev.agents.mcpNote": "POST /mcp — compress, upscale, quota and task tools; a small free allowance per session",
   "dev.cli.body":
     "It speaks the same API and draws on the same quota. Sign in once and the key is stored in your user config directory (macOS / Linux: ~/.config/lubanpng, Windows: %APPDATA%\\lubanpng).",
   "dev.cli.installLabel": "Install (npm)",

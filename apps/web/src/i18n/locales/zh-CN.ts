@@ -240,7 +240,7 @@ export const zhCN = {
   "dev.agents.restNote": "压缩与放大共用同一套端点与额度；浏览器可用匿名 Cookie",
   "dev.agents.mcp": "MCP server",
   "dev.agents.mcpStatus": "可用",
-  "dev.agents.mcpNote": "POST /mcp：压缩、放大、额度查询与任务查询工具；单会话小额度免费，可配账号 Key",
+  "dev.agents.mcpNote": "POST /mcp：压缩、放大、额度查询与任务查询工具；单会话小额度免费",
   "dev.cli.body": "走同一套 API 与额度。登录一次，Key 存在本机用户配置目录（macOS / Linux 为 ~/.config/lubanpng，Windows 为 %APPDATA%\\lubanpng）。",
   "dev.cli.installLabel": "安装（npm）",
   "dev.cli.platforms": "Node 24+，macOS / Linux / Windows。",
