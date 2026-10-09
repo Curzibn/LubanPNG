@@ -318,7 +318,7 @@ export const en: Messages = {
   "login.code.sentPrefix": "Sent to",
   "login.code.sentSuffix": " — valid for {minutes} minutes.",
   "login.code.idle": "Once the code is sent, enter the 6 digits from the email here.",
-  "login.error.mailUnavailable": "Email service isn't available yet. Please try again later.",
+  "login.error.mailUnavailable": "Couldn't send the code. Check the email address, or try again later.",
   "login.error.invalidEmail": "Enter a valid email address",
   "login.error.sendFailed": "Couldn't send the code. Please try again later.",
   "login.error.codeLength": "Enter the {count}-digit code",

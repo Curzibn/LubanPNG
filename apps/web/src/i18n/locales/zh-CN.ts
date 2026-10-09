@@ -308,7 +308,7 @@ export const zhCN = {
   "login.code.sentPrefix": "已发送到",
   "login.code.sentSuffix": "，{minutes} 分钟内有效。",
   "login.code.idle": "发送验证码后，在这里输入邮件里的 6 位数字。",
-  "login.error.mailUnavailable": "邮件服务暂未开通，请稍后再试",
+  "login.error.mailUnavailable": "验证码发送失败，请检查邮箱地址是否正确，或稍后再试",
   "login.error.invalidEmail": "请输入有效的邮箱地址",
   "login.error.sendFailed": "发送失败，请稍后再试",
   "login.error.codeLength": "请输入 {count} 位验证码",
