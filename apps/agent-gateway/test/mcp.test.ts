@@ -240,4 +240,41 @@ describe("limits and error reporting", () => {
       globalThis.fetch = original;
     }
   });
+
+  test("separate sessions never share an upstream subject", async () => {
+    let meCalls = 0;
+    const submitCookies: Array<string | null> = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const cookie = new Headers(init?.headers).get("cookie");
+      if (url.includes("/v1/me")) {
+        meCalls += 1;
+        return jsonResponse({ code: 0, msg: "success", data: mePayload() }, 200, {
+          "set-cookie": `lp_device=dev-${meCalls}; Path=/; HttpOnly`,
+        });
+      }
+      if (url.includes("/v1/images/compress/")) {
+        return jsonResponse({ code: 0, msg: "success", data: completedCompressTask() });
+      }
+      submitCookies.push(cookie);
+      return jsonResponse({ code: 0, msg: "success", data: { task_id: "t1" } });
+    }) as unknown as typeof fetch;
+    try {
+      const [one, two] = await Promise.all([startClient(), startClient()]);
+      const [first, second] = await Promise.all([
+        one.client.callTool({ name: "compress_image", arguments: { image_base64: TINY_BASE64, filename: "s1.png" } }),
+        two.client.callTool({ name: "compress_image", arguments: { image_base64: TINY_BASE64, filename: "s2.png" } }),
+      ]);
+      expect(first.isError ?? false).toBe(false);
+      expect(second.isError ?? false).toBe(false);
+      expect(meCalls).toBe(2);
+      expect(submitCookies).toHaveLength(2);
+      expect([...submitCookies].sort()).toEqual(["lp_device=dev-1", "lp_device=dev-2"]);
+      await one.client.close();
+      await two.client.close();
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
 });
