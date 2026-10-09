@@ -84,8 +84,6 @@ pub enum Msg {
     MissingRequestMarker,
     VisitTooFrequent,
     PathRequired,
-    PlanIdRequired,
-    PlanIdInvalid,
     EndpointNotFound,
     ParseFormFailed {
         detail: String,
@@ -173,8 +171,6 @@ impl Msg {
             Msg::MissingRequestMarker => "缺少 X-Requested-With 头".to_string(),
             Msg::VisitTooFrequent => "访问上报过于频繁，请稍后再试".to_string(),
             Msg::PathRequired => "path 不能为空".to_string(),
-            Msg::PlanIdRequired => "plan_id 不能为空".to_string(),
-            Msg::PlanIdInvalid => "plan_id 仅支持 pro 或 metered".to_string(),
             Msg::EndpointNotFound => "接口不存在".to_string(),
             Msg::ParseFormFailed { detail } => format!("解析表单数据失败: {}", detail),
             Msg::AnonymousDailyQuotaUsed => {
@@ -279,8 +275,6 @@ impl Msg {
             Msg::MissingRequestMarker => "Missing X-Requested-With header".to_string(),
             Msg::VisitTooFrequent => "Too many visit reports, please try again later".to_string(),
             Msg::PathRequired => "path must not be empty".to_string(),
-            Msg::PlanIdRequired => "plan_id must not be empty".to_string(),
-            Msg::PlanIdInvalid => "plan_id must be pro or metered".to_string(),
             Msg::EndpointNotFound => "Endpoint not found".to_string(),
             Msg::ParseFormFailed { detail } => {
                 format!("Failed to parse the form data: {}", detail)

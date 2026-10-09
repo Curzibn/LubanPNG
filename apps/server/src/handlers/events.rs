@@ -10,7 +10,7 @@ use axum::extract::State;
 use axum::http::header::USER_AGENT;
 use axum::http::HeaderMap;
 use axum::{Extension, Json};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::net::IpAddr;
 use std::sync::Arc;
 use utoipa::ToSchema;
@@ -27,19 +27,6 @@ pub struct VisitRequest {
     pub utm_medium: Option<String>,
     #[schema(example = "cli-launch")]
     pub utm_campaign: Option<String>,
-}
-
-#[derive(Deserialize, ToSchema)]
-pub struct WaitlistRequest {
-    #[schema(example = "pro")]
-    pub plan_id: String,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct WaitlistView {
-    #[schema(example = "pro")]
-    pub plan_id: String,
-    pub created_at: String,
 }
 
 fn clean(value: &str, max: usize) -> Option<String> {
@@ -116,36 +103,4 @@ pub async fn record_visit(
         .record(&subject, ip.as_deref(), user_agent.as_deref(), &input)
         .await?;
     Ok(Json(ApiResponse::success(OkResponse { ok: true })))
-}
-
-#[utoipa::path(
-    post,
-    path = "/v1/me/waitlist",
-    tag = "账号",
-    request_body = WaitlistRequest,
-    responses(
-        (status = 200, description = "已加入等待名单，重复提交幂等", body = ApiResponse<WaitlistView>),
-        (status = 400, description = "plan_id 无效", body = ApiResponseError),
-        (status = 401, description = "未登录", body = ApiResponseError),
-    )
-)]
-pub async fn join_waitlist(
-    State(state): State<Arc<AppState>>,
-    Extension(subject): Extension<Subject>,
-    Extension(lang): Extension<Lang>,
-    Json(body): Json<WaitlistRequest>,
-) -> Result<Json<ApiResponse<WaitlistView>>, AppError> {
-    if !subject.is_account() {
-        return Err(AppError::unauthorized(Msg::LoginRequired, lang));
-    }
-    let plan_id =
-        clean(&body.plan_id, 40).ok_or_else(|| AppError::validation(Msg::PlanIdRequired, lang))?;
-    if !matches!(plan_id.as_str(), "pro" | "metered") {
-        return Err(AppError::validation(Msg::PlanIdInvalid, lang));
-    }
-    let row = state.waitlist.upsert(subject.id, &plan_id).await?;
-    Ok(Json(ApiResponse::success(WaitlistView {
-        plan_id: row.plan_id,
-        created_at: row.created_at.to_rfc3339(),
-    })))
 }

@@ -1739,65 +1739,6 @@ fn verify_records_first_touch_signup_source_once() {
 }
 
 #[test]
-fn waitlist_join_requires_account_and_is_idempotent() {
-    run(async {
-        let app = test_app().await;
-        app.get("/v1/me").await;
-        let anonymous = app
-            .post_json("/v1/me/waitlist", serde_json::json!({ "plan_id": "pro" }))
-            .await;
-        assert_eq!(anonymous.status, StatusCode::UNAUTHORIZED);
-        assert_eq!(anonymous.json()["code"], 4001);
-
-        let email = login(&app).await;
-        let first = app
-            .post_json("/v1/me/waitlist", serde_json::json!({ "plan_id": "pro" }))
-            .await;
-        assert_eq!(first.status, StatusCode::OK);
-        assert_eq!(first.json()["data"]["plan_id"], "pro");
-        let created_at = first.json()["data"]["created_at"]
-            .as_str()
-            .unwrap()
-            .to_string();
-
-        let second = app
-            .post_json("/v1/me/waitlist", serde_json::json!({ "plan_id": "pro" }))
-            .await;
-        assert_eq!(second.status, StatusCode::OK);
-        assert_eq!(second.json()["data"]["created_at"], created_at);
-
-        let invalid = app
-            .post_json(
-                "/v1/me/waitlist",
-                serde_json::json!({ "plan_id": "enterprise" }),
-            )
-            .await;
-        assert_eq!(invalid.status, StatusCode::BAD_REQUEST);
-        assert_eq!(invalid.json()["code"], 1001);
-
-        let metered = app
-            .post_json(
-                "/v1/me/waitlist",
-                serde_json::json!({ "plan_id": "metered" }),
-            )
-            .await;
-        assert_eq!(metered.status, StatusCode::OK);
-        assert_eq!(metered.json()["data"]["plan_id"], "metered");
-
-        let pool = db::connect(&test_config().database).await.unwrap();
-        let count: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM waitlist_signups w JOIN accounts a ON a.id = w.account_id
-             WHERE a.email = $1 AND w.plan_id = 'pro'",
-        )
-        .bind(&email)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(count, 1);
-    });
-}
-
-#[test]
 fn analytics_views_are_queryable_and_consistent() {
     run(async {
         let app = test_app().await;

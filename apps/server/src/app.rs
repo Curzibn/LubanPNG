@@ -15,7 +15,6 @@ use crate::repositories::quota_repository::QuotaRepository;
 use crate::repositories::rate_limit_repository::RateLimitRepository;
 use crate::repositories::task_repository::TaskRepository;
 use crate::repositories::visit_repository::VisitRepository;
-use crate::repositories::waitlist_repository::WaitlistRepository;
 use crate::response;
 use crate::services::auth::AuthService;
 use crate::services::compression::CompressionService;
@@ -91,7 +90,6 @@ pub struct AppState {
     pub tasks: Arc<TaskRepository>,
     pub rate_limits: Arc<RateLimitRepository>,
     pub visits: Arc<VisitRepository>,
-    pub waitlist: Arc<WaitlistRepository>,
 }
 
 pub fn build_state(
@@ -105,7 +103,6 @@ pub fn build_state(
     let identity = Arc::new(IdentityRepository::new(pool.clone()));
     let rate_limits = Arc::new(RateLimitRepository::new(pool.clone()));
     let visits = Arc::new(VisitRepository::new(pool.clone()));
-    let waitlist = Arc::new(WaitlistRepository::new(pool.clone()));
     let quota = Arc::new(QuotaService::new(QuotaRepository::new(pool)));
 
     let mut strategies: HashMap<ImageFormat, Arc<dyn CompressionStrategy>> = HashMap::new();
@@ -148,7 +145,6 @@ pub fn build_state(
         tasks,
         rate_limits,
         visits,
-        waitlist,
     })
 }
 
@@ -198,7 +194,6 @@ impl Modify for ApiKeySecurity {
         handlers::auth::verify_otp,
         handlers::auth::logout,
         handlers::events::record_visit,
-        handlers::events::join_waitlist,
     ),
     components(schemas(
         response::ApiResponse<handlers::image::UploadResponse>,
@@ -220,10 +215,7 @@ impl Modify for ApiKeySecurity {
         handlers::auth::VerifyRequest,
         handlers::auth::VerifyResponse,
         handlers::auth::OkResponse,
-        response::ApiResponse<handlers::events::WaitlistView>,
         handlers::events::VisitRequest,
-        handlers::events::WaitlistRequest,
-        handlers::events::WaitlistView,
     )),
     modifiers(&ApiKeySecurity),
     tags(
@@ -267,7 +259,6 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/v1/auth/verify", post(handlers::auth::verify_otp))
         .route("/v1/auth/logout", post(handlers::auth::logout))
         .route("/v1/events/visit", post(handlers::events::record_visit))
-        .route("/v1/me/waitlist", post(handlers::events::join_waitlist))
         .layer(from_fn_with_state(
             state.clone(),
             handlers::extract::subject_layer,
