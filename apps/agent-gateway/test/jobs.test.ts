@@ -87,7 +87,7 @@ describe("runCompress billing", () => {
 });
 
 describe("wait budget", () => {
-  test("a job still running at the deadline is not billed", async () => {
+  test("a job still running at the deadline is not counted", async () => {
     const { runCompress } = await import("../src/jobs.ts");
     const original = globalThis.fetch;
     globalThis.fetch = (async (input: string | URL | Request) => {

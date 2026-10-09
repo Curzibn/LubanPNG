@@ -63,11 +63,146 @@ describe("mcp endpoint", () => {
     expect(response.status).toBe(404);
   });
 
-  test("reserves the session quota before a job is billed", async () => {
+  test("reserves the session quota before a job is counted", async () => {
     const { client } = await startClient();
     const missing = await client.callTool({ name: "compress_image", arguments: {} });
     expect(missing.isError).toBe(true);
     expect(textOf(missing)).toContain("Invalid arguments");
     await client.close();
+  });
+});
+
+const TINY_BASE64 = "aGVsbG8=";
+
+function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json", ...headers },
+  });
+}
+
+function mockUpstream(handler: (url: string) => Response): () => void {
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) =>
+    handler(String(input))) as unknown as typeof fetch;
+  return () => {
+    globalThis.fetch = original;
+  };
+}
+
+function completedCompressTask(): Record<string, unknown> {
+  return {
+    task_id: "t1",
+    status: "completed",
+    kind: "compress",
+    original_name: "a.png",
+    original_size: 300,
+    compressed_size: 200,
+    quota_units: 1,
+    no_gain: false,
+    downloadable: true,
+    created_at: 1,
+  };
+}
+
+describe("limits and error reporting", () => {
+  test("a full MCP session is reported as a session limit, not an upstream reset", async () => {
+    const restore = mockUpstream((url) =>
+      url.includes("/v1/images/compress/")
+        ? jsonResponse({ code: 0, msg: "success", data: completedCompressTask() })
+        : jsonResponse({ code: 0, msg: "success", data: { task_id: "t1" } }),
+    );
+    try {
+      const { client } = await startClient();
+      for (let i = 0; i < 5; i += 1) {
+        const ok = await client.callTool({
+          name: "compress_image",
+          arguments: { image_base64: TINY_BASE64, filename: `t${i}.png` },
+        });
+        expect(ok.isError ?? false).toBe(false);
+      }
+      const denied = await client.callTool({
+        name: "compress_image",
+        arguments: { image_base64: TINY_BASE64, filename: "over.png" },
+      });
+      const text = textOf(denied);
+      expect(text).toContain("call allowance (5 per session)");
+      expect(text).toContain("does not renew with the upstream quota");
+      expect(text).toContain("separate from this session limit");
+      expect(text).not.toContain("lp_api_key");
+      expect(text).not.toContain("new session");
+      await client.close();
+    } finally {
+      restore();
+    }
+  });
+
+  test("an upstream 429 keeps its own message and retry hint", async () => {
+    const restore = mockUpstream(() =>
+      jsonResponse(
+        { code: 4004, msg: "upscale queue is full; try again later", data: { queue_depth: 10 } },
+        429,
+        { "retry-after": "30" },
+      ),
+    );
+    try {
+      const { client } = await startClient();
+      const denied = await client.callTool({
+        name: "upscale_image",
+        arguments: { image_base64: TINY_BASE64, scale: "x2", filename: "queue.png" },
+      });
+      expect(denied.isError).toBe(true);
+      const text = textOf(denied);
+      expect(text).toContain("upscale queue is full");
+      expect(text).toContain("retry after 30s");
+      expect(text).not.toContain("Quota exhausted for this subject");
+      await client.close();
+    } finally {
+      restore();
+    }
+  });
+
+  test("check_quota separates the upstream quota from the session allowance", async () => {
+    const restore = mockUpstream((url) => {
+      if (url.includes("/v1/me")) {
+        return jsonResponse({
+          code: 0,
+          msg: "success",
+          data: {
+            subject: "device",
+            email: null,
+            plan: {
+              id: "anonymous",
+              name: "anonymous",
+              period: "day",
+              quota: 5,
+              max_file_size: 5242880,
+              retention_hours: 24,
+              max_api_keys: 0,
+            },
+            quota: {
+              period_key: "2026-10-09",
+              limit: 5,
+              used: 1,
+              held: 0,
+              remaining: 4,
+              resets_at: "2026-10-09T16:00:00Z",
+            },
+          },
+        });
+      }
+      return jsonResponse({ code: 0, msg: "success", data: {} });
+    });
+    try {
+      const { client } = await startClient();
+      const result = await client.callTool({ name: "check_quota", arguments: {} });
+      const text = textOf(result);
+      expect(text).toContain("Upstream subject");
+      expect(text).toContain("This MCP session has used 0/5 compress and 0/1 upscale calls");
+      expect(text).toContain("separate from the upstream quota");
+      await client.close();
+    } finally {
+      restore();
+    }
   });
 });

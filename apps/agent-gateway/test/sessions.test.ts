@@ -63,6 +63,19 @@ describe("SessionRegistry", () => {
     expect(registry.reserve(withKey, "compress").allowed).toBe(true);
   });
 
+  test("a key-configured session still hits the session allowance", () => {
+    const registry = new SessionRegistry(testConfig());
+    const id = newSessionId();
+    registry.bindApiKey(id, "lp_live_example");
+    for (let i = 0; i < 5; i += 1) {
+      expect(registry.reserve(id, "compress").allowed).toBe(true);
+      registry.release(id, "compress", true);
+    }
+    const verdict = registry.reserve(id, "compress");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) expect(verdict.reason).toBe("session_quota");
+  });
+
   test("expired sessions are evicted", () => {
     let now = 1_000;
     const registry = new SessionRegistry(testConfig({ sessionTtlMs: 100 }), () => now);

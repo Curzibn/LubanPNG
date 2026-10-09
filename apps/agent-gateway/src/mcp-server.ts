@@ -23,19 +23,18 @@ export interface GatewayDeps {
 type Extra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 
 const UPSCALE_DESCRIPTION = [
-  "Upscale a PNG or JPEG image by 2x or 4x with a super-resolution model; the output is always a PNG.",
+  "Upscale a PNG or JPEG image by 2x or 4x with a super-resolution model; the output is always a PNG. Free to use.",
   "Input limits: PNG or JPEG only, at most 2.25 megapixels, no side above 2048 px, at most 20 MiB.",
   "Output is capped at 64 MiB. Requests may queue behind other upscale jobs; a full queue fails with HTTP 429 and a retry_after hint.",
-  "A failed, timed-out or invalid upscale is never billed. Upscaling has no no_gain case because the result is always larger than the input.",
+  "A failed, timed-out or invalid upscale is never counted. Upscaling has no no_gain case because the result is always larger than the input.",
   "Upscale output is kept for 24 hours; call get_task to fetch the download link again.",
 ].join(" ");
 
 const COMPRESS_DESCRIPTION = [
   "Compress a PNG, JPEG, GIF, WebP or AVIF image, optionally converting it to png, jpeg, webp or avif.",
-  "One call submits the job, waits for it to finish and returns the result with a download link.",
-  "Billing: a job is charged only when it produces a smaller file (convert adds one extra unit). A result that is not smaller is reported with no_gain=true and costs nothing; failed jobs are free.",
+  "Free to use: one call submits the job, waits for it to finish and returns the result with a download link. A run is counted only when the output is smaller than the input (a conversion adds one extra unit); no-gain results and failures are never counted.",
   "Compressed output is kept for 24 hours; call get_task to fetch the download link again.",
-  "If the session runs out of calls, the error explains how to continue: retry after the reset reported by check_quota, or configure an lp_api_key.",
+  "Each MCP session has a limited number of calls; check_quota reports this session's usage and the upstream quota behind it.",
 ].join(" ");
 
 function ok(text: string, structured?: Record<string, unknown>) {
@@ -53,22 +52,30 @@ function fail(text: string, structured?: Record<string, unknown>) {
   };
 }
 
-function quotaHint(config: GatewayConfig): string {
+function sessionLimitMessage(kind: TaskKind, limit: number): string {
   return [
-    `Options: (a) retry after the reset time reported by check_quota,`,
-    `(b) configure the MCP server with an lp_api_key to use that account's monthly quota (register at ${config.publicBaseUrl}).`,
+    `This MCP session has used its ${kind} call allowance (${limit} per session).`,
+    `The allowance is fixed per session and does not renew with the upstream quota; it applies to anonymous and key-configured sessions alike.`,
+    `check_quota reports the upstream subject quota and its reset time, which are separate from this session limit.`,
   ].join(" ");
 }
 
-function errorPayload(error: unknown, config: GatewayConfig, kind: TaskKind): Record<string, unknown> {
+function anonymousBreakerMessage(limit: number): string {
+  return [
+    `This gateway's shared anonymous pool is closed for today (${limit} calls/day across anonymous sessions).`,
+    `It reopens after the daily reset; check_quota reports the upstream subject quota behind this session.`,
+  ].join(" ");
+}
+
+function errorPayload(error: unknown): Record<string, unknown> {
   if (error instanceof UpstreamError) {
     const quota = error.quota;
     let message = error.message;
     if (error.status === 429) {
       message =
-        kind === "compress"
-          ? `Quota exhausted for this subject. ${quotaHint(config)}`
-          : `Upscale quota exhausted for this subject. ${quotaHint(config)}`;
+        error.retryAfter !== undefined
+          ? `${error.message} (retry after ${error.retryAfter}s)`
+          : error.message;
     } else if (error.status === 413) {
       message = `The file is larger than the allowed upload size: ${error.message}`;
     } else if (error.status === 503) {
@@ -153,10 +160,11 @@ export function buildServer(deps: GatewayDeps): McpServer {
     { name: "lubanpng-agent-gateway", version: "0.1.0" },
     {
       instructions: [
-        "LubanPNG compresses and upscales images.",
+        "LubanPNG compresses and upscales images; both are free to use.",
         "compress_image and upscale_image submit a job, wait for it and return the result with a download link.",
-        `Anonymous use is limited to ${config.sessionQuotaLimit} compress calls and ${config.sessionUpscaleLimit} upscale call per MCP session; check_quota reports the remaining budget and reset time.`,
-        "A compression that produces no smaller file is free; a failed upscale is free.",
+        `Each MCP session can run up to ${config.sessionQuotaLimit} compress calls and ${config.sessionUpscaleLimit} upscale call, whether anonymous or key-configured; the session allowance is separate from any upstream quota.`,
+        "check_quota reports this session's usage together with the upstream quota behind it.",
+        "A compression that produces no smaller file and a failed upscale are never counted.",
       ].join(" "),
     },
   );
@@ -179,35 +187,30 @@ export function buildServer(deps: GatewayDeps): McpServer {
     const verdict = sessions.reserve(sessionId, kind);
     if (verdict.allowed) return null;
     if (verdict.reason === "anonymous_daily_breaker") {
-      return fail(
-        `This gateway's anonymous pool is closed for today (${verdict.limit} calls/day). Retry after the daily reset, or configure an lp_api_key to use an account's monthly quota.`,
-        { error: { status: 503, code: 2003, message: "anonymous daily breaker tripped", limit: verdict.limit } },
-      );
+      return fail(anonymousBreakerMessage(verdict.limit), {
+        error: { status: 503, code: 2003, message: "anonymous daily breaker tripped", limit: verdict.limit },
+      });
     }
-    const guidance = quotaHint(config);
-    return fail(
-      `This MCP session has used its ${kind} allowance (${verdict.limit}). ${guidance}`,
-      {
-        error: {
-          status: 429,
-          code: 4003,
-          message: `session ${kind} quota exhausted`,
-          session_limit: verdict.limit,
-        },
+    return fail(sessionLimitMessage(kind, verdict.limit), {
+      error: {
+        status: 429,
+        code: 4003,
+        message: `mcp session ${kind} allowance exhausted`,
+        session_limit: verdict.limit,
       },
-    );
+    });
   };
 
   const summarize = (kind: TaskKind, task: TaskView, downloadUrl: string | null): string => {
     if (task.status === "failed") {
-      return `The ${kind} job failed${task.error_msg ? `: ${task.error_msg}` : ""}. It was not billed.`;
+      return `The ${kind} job failed${task.error_msg ? `: ${task.error_msg}` : ""}. It was not counted.`;
     }
     if (!task.downloadable) {
-      return `The ${kind} job is still running. Call get_task with task_id ${task.task_id} later; it has not been billed yet.`;
+      return `The ${kind} job is still running. Call get_task with task_id ${task.task_id} later; nothing has been counted yet.`;
     }
     const result = task.no_gain
-      ? `No smaller file was produced, so this call is free.`
-      : `Charged ${task.quota_units} quota unit${task.quota_units === 1 ? "" : "s"}.`;
+      ? `No smaller file was produced, so nothing was counted.`
+      : `Counted ${task.quota_units} run${task.quota_units === 1 ? "" : "s"} against the upstream quota.`;
     return `${kind === "compress" ? "Compressed" : "Upscaled"} ${task.original_name}: ${task.original_size} -> ${task.compressed_size} bytes. ${result} Download: ${downloadUrl} (kept for 24h).`;
   };
 
@@ -252,12 +255,8 @@ export function buildServer(deps: GatewayDeps): McpServer {
         return outcome.task.status === "failed" ? fail(text, payload) : ok(text, payload);
       } catch (error) {
         sessions.release(sessionId, "compress", false);
-        return fail(
-          errorPayload(error, config, "compress").error
-            ? String((errorPayload(error, config, "compress").error as Record<string, unknown>).message)
-            : "compress failed",
-          errorPayload(error, config, "compress"),
-        );
+        const payload = errorPayload(error);
+        return fail(String((payload.error as Record<string, unknown>).message), payload);
       }
     },
   );
@@ -295,7 +294,7 @@ export function buildServer(deps: GatewayDeps): McpServer {
         return outcome.task.status === "failed" ? fail(text, payload) : ok(text, payload);
       } catch (error) {
         sessions.release(sessionId, "upscale", false);
-        const payload = errorPayload(error, config, "upscale");
+        const payload = errorPayload(error);
         return fail(String((payload.error as Record<string, unknown>).message), payload);
       }
     },
@@ -306,7 +305,7 @@ export function buildServer(deps: GatewayDeps): McpServer {
     {
       title: "Check the current quota",
       description:
-        "Report the subject behind this MCP session, its plan, the remaining quota and the reset time, plus how many calls this session has already used. Anonymous sessions get a small daily allowance; an lp_api_key uses the account's monthly quota.",
+        "Report the upstream subject behind this MCP session, its plan, quota and reset time, together with how many calls this session has used. The per-session allowance is separate from the upstream quota.",
       inputSchema: {},
     },
     async (_args, extra) => {
@@ -326,14 +325,15 @@ export function buildServer(deps: GatewayDeps): McpServer {
           resets_at: me.data.quota.resets_at,
           max_file_size: me.data.plan.max_file_size,
           retention_hours: me.data.plan.retention_hours,
+          session_limits: { compress: config.sessionQuotaLimit, upscale: config.sessionUpscaleLimit },
           session_calls_used: { compress: state.consumed.compress, upscale: state.consumed.upscale },
         };
         return ok(
-          `Subject ${payload.subject}${payload.email ? ` (${payload.email})` : ""} on the ${payload.plan} plan: ${payload.quota_remaining} of ${payload.quota_limit} units left, resets at ${payload.resets_at}.`,
+          `Upstream subject ${payload.subject}${payload.email ? ` (${payload.email})` : ""} on the ${payload.plan} plan: ${payload.quota_remaining} of ${payload.quota_limit} units left, resets at ${payload.resets_at}. This MCP session has used ${payload.session_calls_used.compress}/${payload.session_limits.compress} compress and ${payload.session_calls_used.upscale}/${payload.session_limits.upscale} upscale calls; the session allowance is separate from the upstream quota.`,
           payload,
         );
       } catch (error) {
-        const payload = errorPayload(error, config, "compress");
+        const payload = errorPayload(error);
         return fail(String((payload.error as Record<string, unknown>).message), payload);
       }
     },
@@ -370,7 +370,7 @@ export function buildServer(deps: GatewayDeps): McpServer {
           payload,
         );
       } catch (error) {
-        const payload = errorPayload(error, config, "compress");
+        const payload = errorPayload(error);
         return fail(String((payload.error as Record<string, unknown>).message), payload);
       }
     },
