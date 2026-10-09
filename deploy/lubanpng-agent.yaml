@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
         - name: gateway
-          image: registry.opus.wizthink.cn:5000/lubanpng/agent-gateway@sha256:6ffa81fdc61fecc031d8df3898cca72b91ed17a23ab9649d95e05de1ee910f89
+          image: registry.opus.wizthink.cn:5000/lubanpng/agent-gateway@sha256:fe5f7e82b53778fe173c63481bf3854f2ae19a72c77fdae6cd3d13fc8fe32035
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
