@@ -18,12 +18,13 @@ describe("static content", () => {
     expect(html).toContain("npm i -g lubanpng")
   })
 
-  it("carries the Chinese pricing plans and every FAQ answer", () => {
+  it("carries the Chinese pricing copy and every FAQ answer", () => {
     const html = buildStaticContent("pricing", "zh-CN")
     expect(html).toContain(htmlEscape(zh["pricing.title"]))
     expect(html).toContain(htmlEscape(zh["pricing.free.price"]))
     expect(html).toContain(htmlEscape(zh["pricing.free.feature1"]))
-    expect(html).toContain(htmlEscape(zh["pricing.planned"]))
+    expect(html).toContain(htmlEscape(zh["pricing.entry.lead"]))
+    expect(html).not.toContain("按量")
     expect(html).toContain(htmlEscape(zh["pricing.faq.q1"]))
     expect(html).toContain(htmlEscape(zh["pricing.faq.a1"]))
     expect(html).toContain(htmlEscape(zh["pricing.faq.a5"]))

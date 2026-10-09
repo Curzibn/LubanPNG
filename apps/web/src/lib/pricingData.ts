@@ -1,31 +1,16 @@
-import { type WaitlistPlanId } from "../api/client.ts"
 import type { MessageKey } from "../i18n/messages.ts"
 
-type FreePlanCard = {
-  id: "free"
-  waitlist: false
+export type PlanCard = {
+  id: string
   eyebrowKey: MessageKey
   priceKey: MessageKey
   descriptionKey: MessageKey
   featureKeys: MessageKey[]
 }
-
-type WaitlistPlanCard = {
-  id: WaitlistPlanId
-  waitlist: true
-  dark: boolean
-  eyebrowKey: MessageKey
-  priceKey: MessageKey
-  descriptionKey: MessageKey
-  featureKeys: MessageKey[]
-}
-
-export type PlanCard = FreePlanCard | WaitlistPlanCard
 
 export const plans: PlanCard[] = [
   {
     id: "free",
-    waitlist: false,
     eyebrowKey: "pricing.free.eyebrow",
     priceKey: "pricing.free.price",
     descriptionKey: "pricing.free.description",
@@ -35,26 +20,20 @@ export const plans: PlanCard[] = [
       "pricing.free.feature3",
       "pricing.free.feature4",
       "pricing.free.feature5",
+      "pricing.free.feature6",
     ],
   },
-  {
-    id: "pro",
-    waitlist: true,
-    dark: true,
-    eyebrowKey: "pricing.pro.eyebrow",
-    priceKey: "pricing.planned",
-    descriptionKey: "pricing.pro.description",
-    featureKeys: ["pricing.pro.feature1", "pricing.pro.feature2", "pricing.pro.feature3"],
-  },
-  {
-    id: "metered",
-    waitlist: true,
-    dark: false,
-    eyebrowKey: "pricing.metered.eyebrow",
-    priceKey: "pricing.planned",
-    descriptionKey: "pricing.metered.description",
-    featureKeys: ["pricing.metered.feature1", "pricing.metered.feature2"],
-  },
+]
+
+export type PricingEntry = {
+  key: MessageKey
+  to: string
+}
+
+export const pricingEntries: PricingEntry[] = [
+  { key: "pricing.entry.web", to: "/" },
+  { key: "pricing.entry.cli", to: "/developers#cli" },
+  { key: "pricing.entry.api", to: "/developers" },
 ]
 
 export const pricingFaqs = [

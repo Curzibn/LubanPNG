@@ -11,7 +11,7 @@ describe("buildPageHead", () => {
   it("uses the Chinese canonical path with self-referencing hreflang for the Chinese site", () => {
     const head = buildPageHead("pricing", "zh-CN", "/pricing")
     expect(head.lang).toBe("zh-CN")
-    expect(head.title).toBe("定价 · LubanPNG")
+    expect(head.title).toBe("免费使用 · LubanPNG")
     expect(linkFor(head, "canonical")).toBe(`${SITE_ORIGIN}/pricing`)
     expect(linkFor(head, "alternate", "zh-CN")).toBe(`${SITE_ORIGIN}/pricing`)
     expect(linkFor(head, "alternate", "en")).toBe(`${SITE_ORIGIN}/en/pricing`)
@@ -21,7 +21,7 @@ describe("buildPageHead", () => {
   it("points an English page at the /en URL and keeps x-default on Chinese", () => {
     const head = buildPageHead("pricing", "en", "/en/pricing")
     expect(head.lang).toBe("en")
-    expect(head.title).toBe("Pricing · LubanPNG")
+    expect(head.title).toBe("Free to use · LubanPNG")
     expect(linkFor(head, "canonical")).toBe(`${SITE_ORIGIN}/en/pricing`)
     expect(linkFor(head, "alternate", "zh-CN")).toBe(`${SITE_ORIGIN}/pricing`)
     expect(linkFor(head, "alternate", "en")).toBe(`${SITE_ORIGIN}/en/pricing`)

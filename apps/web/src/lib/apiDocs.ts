@@ -57,7 +57,6 @@ export const upscaleLimitRows: ReadonlyArray<{ itemKey: MessageKey; valueKey: Me
 export const agentChannelRows: ReadonlyArray<{ channelKey: MessageKey; statusKey: MessageKey; noteKey: MessageKey }> = [
   { channelKey: "dev.agents.rest", statusKey: "dev.agents.restStatus", noteKey: "dev.agents.restNote" },
   { channelKey: "dev.agents.mcp", statusKey: "dev.agents.mcpStatus", noteKey: "dev.agents.mcpNote" },
-  { channelKey: "dev.agents.x402", statusKey: "dev.agents.x402Status", noteKey: "dev.agents.x402Note" },
 ]
 
 export const developerFaqs = [

@@ -246,14 +246,6 @@ export const revokeApiKey = async (id: string): Promise<void> => {
 
 export const listTasks = async (): Promise<TaskRecord[]> => (await request<TaskRecord[]>("GET", "/v1/me/tasks")).data
 
-export type WaitlistPlanId = "pro" | "metered"
-
-export const joinWaitlist = async (planId: WaitlistPlanId): Promise<void> => {
-  await request<{ plan_id: string; created_at: string }>("POST", "/v1/me/waitlist", {
-    json: { plan_id: planId },
-  })
-}
-
 export type VisitPayload = {
   path: string
   referrer_host: string

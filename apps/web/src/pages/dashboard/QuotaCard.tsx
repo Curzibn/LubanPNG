@@ -1,9 +1,7 @@
 import type { Me } from "../../api/client.ts"
-import { LinkButton } from "../../components/Button.tsx"
 import { Eyebrow } from "../../components/Eyebrow.tsx"
 import { QuotaRing } from "../../components/QuotaRing.tsx"
 import { useI18n } from "../../i18n/I18nProvider.tsx"
-import { localizedPath } from "../../i18n/locale.ts"
 import { formatResetTime } from "../../lib/format.ts"
 
 export const QuotaCard = ({ me }: { me: Me }) => {
@@ -26,12 +24,6 @@ export const QuotaCard = ({ me }: { me: Me }) => {
           <p>{t("dash.quota.used", { used: quota.used, remaining: quota.remaining })}</p>
           {reset && <p className="text-ink-secondary">{t("dash.quota.reset", { time: reset })}</p>}
         </div>
-      </div>
-      <div className="flex flex-col gap-2.5 border-t-thin border-hairline pt-4">
-        <p className="text-ui text-ink-secondary">{t("dash.quota.upsell")}</p>
-        <LinkButton to={localizedPath("/pricing", locale)} variant="outline" size="md" className="w-full">
-          {t("dash.quota.waitlist")}
-        </LinkButton>
       </div>
     </section>
   )

@@ -5,7 +5,6 @@ import { LinkButton } from "../../components/Button.tsx"
 import { Container } from "../../components/Container.tsx"
 import { Eyebrow } from "../../components/Eyebrow.tsx"
 import { Notice } from "../../components/Notice.tsx"
-import { WaitlistButton } from "../../components/WaitlistButton.tsx"
 import { useI18n } from "../../i18n/I18nProvider.tsx"
 import { localizedPath } from "../../i18n/locale.ts"
 import { downloadAllAsZip, openLinkInBrowser, saveBlobInBrowser } from "../../lib/download.ts"
@@ -36,15 +35,13 @@ const QuotaExhaustedNotice = ({ anonymous }: { anonymous: boolean }) => {
     <Notice tone="warning">
       <p>{anonymous ? t("home.quota.anonymous.lead") : t("home.quota.account.lead")}</p>
       <p className="mt-1 text-ink-secondary">{anonymous ? t("home.quota.anonymous.body") : t("home.quota.account.body")}</p>
-      <div className="mt-3">
-        {anonymous ? (
+      {anonymous && (
+        <div className="mt-3">
           <LinkButton to={localizedPath("/login", locale)} variant="accent" size="md">
             {t("home.quota.anonymous.action")}
           </LinkButton>
-        ) : (
-          <WaitlistButton planId="pro" size="md" className="max-w-aside" />
-        )}
-      </div>
+        </div>
+      )}
     </Notice>
   )
 }

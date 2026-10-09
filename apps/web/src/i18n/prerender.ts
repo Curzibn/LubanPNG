@@ -15,7 +15,7 @@ import {
   uploadSample,
 } from "../lib/apiDocs.ts"
 import { CLI_INSTALL_COMMAND } from "../lib/cliRelease.ts"
-import { plans, pricingFaqs, type PlanCard } from "../lib/pricingData.ts"
+import { plans, pricingEntries, pricingFaqs, type PlanCard } from "../lib/pricingData.ts"
 import { GITHUB_URL } from "../lib/site.ts"
 import { localizedPath, type Locale } from "./locale.ts"
 import { SITE_ORIGIN, type PublicRouteId } from "./meta.ts"
@@ -143,15 +143,18 @@ ${plan.featureKeys.map((key) => `              <li>${text(dictionary, key)}</li>
             </ul>
           </article>`
 
-const pricingMain = (dictionary: Messages): string => `    <main class="px-5 md:px-10">
+const pricingMain = (locale: Locale, dictionary: Messages): string => `    <main class="px-5 md:px-10">
       <div class="mx-auto w-full max-w-page">
         <section class="flex flex-col gap-4 pb-8 pt-10 md:items-center md:pb-12 md:pt-18 md:text-center">
           <h1 class="font-display text-display-sm text-ink md:text-display-xl">${text(dictionary, "pricing.title")}</h1>
           <p class="max-w-lede-sm text-body text-pretty text-ink-secondary md:text-lede">${text(dictionary, "pricing.lede")}</p>
         </section>
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-3 md:items-stretch md:gap-6">
+        <div class="mx-auto grid w-full max-w-card grid-cols-1">
 ${plans.map((plan) => planCardHtml(dictionary, plan)).join("\n")}
         </div>
+        <p class="pt-4 text-center text-label text-ink-secondary">${text(dictionary, "pricing.entry.lead")} ${pricingEntries
+          .map((entry) => `<a class="text-vermilion" href="${localizedPath(entry.to, locale)}">${text(dictionary, entry.key)}</a>`)
+          .join(" · ")}</p>
         <section aria-label="${text(dictionary, "pricing.faq.aria")}" class="grid grid-cols-1 gap-6 pt-12 md:grid-cols-3 md:pt-18">
 ${pricingFaqs
   .map(
@@ -308,7 +311,7 @@ const routeMain = (routeId: ShellRouteId, locale: Locale, dictionary: Messages):
     case "home":
       return homeMain(locale, dictionary)
     case "pricing":
-      return pricingMain(dictionary)
+      return pricingMain(locale, dictionary)
     case "developers":
       return developersMain(dictionary)
     case "notFound":

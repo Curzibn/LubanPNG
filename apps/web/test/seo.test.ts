@@ -117,9 +117,10 @@ describe("llms.txt", () => {
     expect(llms).toContain("放大")
   })
 
-  it("lists the three access channels and marks the unshipped ones as planned", () => {
+  it("lists the available access channels without unshipped previews", () => {
     expect(llms).toContain("REST + API key")
-    expect(llms).toContain("MCP server (planned, not yet available)")
-    expect(llms).toContain("x402 pay-per-call (planned, not yet available)")
+    expect(llms).toContain("MCP server (available)")
+    expect(llms).not.toContain("planned")
+    expect(llms).not.toContain("x402")
   })
 })

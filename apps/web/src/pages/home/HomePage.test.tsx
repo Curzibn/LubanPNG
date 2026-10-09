@@ -82,10 +82,11 @@ describe("home quota guidance", () => {
     expect(html).not.toContain("加入等待名单")
   })
 
-  it("lets a signed-in visitor join the waitlist in one click once the month is gone", () => {
+  it("tells a signed-in account when the month resets once the quota is gone", () => {
     const html = renderHome("/", meFor({ subject: "account", planId: "free", remaining: 0 }))
     expect(html).toContain("本月额度已用完")
-    expect(html).toContain("加入等待名单")
+    expect(html).toContain("额度将在下个自然月自动重置")
+    expect(html).not.toContain("等待名单")
   })
 
   it("renders the same guidance in English", () => {

@@ -7,7 +7,7 @@
 - **Compression** (available): input PNG, JPEG, GIF, WebP, AVIF; APNG, GIF and animated WebP keep their animation. Static images can convert to png, jpeg, webp or avif (a transparent image converted to JPEG needs a `#RRGGBB` background colour). Upload `POST /v1/images/compress` (multipart: `file`, optional `convert` and `background`), poll `GET /v1/images/compress/{task_id}?wait=30`, download `GET /v1/images/download/{filename}` (302 to a presigned URL, valid 10 minutes).
 - **Upscaling** (available): input static PNG or JPEG only; up to 2.25 MP, longest side 2048 px, 20 MB. Upload `POST /v1/images/upscale` (multipart: `file` + `scale=x2|x4`); the output is always PNG. Status polling and download use the same endpoints as compression.
 
-## Billing
+## Usage counting
 
 - Compression: one run is charged only when the output is actually smaller, plus 1 extra run when a format conversion is requested. Failures and no-gain results are never charged — without a conversion the original file is kept, with one the converted file is returned and still not charged.
 - Upscaling: a successful upscale costs 1 run — the output is by design larger than the input, so the "smaller output" rule does not apply to it. Failed upscales, timeouts and invalid input are never charged.
@@ -26,8 +26,7 @@
 ## Access channels
 
 - REST + API key (available now) — create a key in the dashboard; anonymous credentials also work for browser flows.
-- MCP server (planned, not yet available) — will expose compression and upscaling as tools for agents.
-- x402 pay-per-call (planned, not yet available) — pay per call without an account.
+- MCP server (available) — `POST /mcp` (streamable HTTP) exposes compress_image, upscale_image, check_quota and get_task; every session gets a small free allowance, and an `lp_api_key` switches the tools to that account's monthly quota.
 
 ## Documentation
 
@@ -44,4 +43,4 @@
 - **额度**：匿名每天 5 次，注册用户每月 50 次，放大与压缩共用同一份额度；`/v1/images/*` 与 `/v1/me` 响应带 `X-Quota-Limit`、`X-Quota-Remaining`、`X-Quota-Reset`。
 - **鉴权**：`Authorization: Bearer lp_live_…` API Key，或网页使用的匿名设备 Cookie；Cookie 鉴权的 POST 需带 `X-Requested-With: LubanPNG`。
 - **排队**：放大单飞（同一时刻只处理一个任务），繁忙时排队；队列深度超过 10 时 `POST /v1/images/upscale` 返回 429（错误数据带 `Retry-After` 与 `queue_depth`），放大服务不可达时提交返回 503。
-- **接入通道**：REST + API Key（可用）；MCP（规划中，未上线）；x402 按次付费（规划中，未上线）。
+- **接入通道**：REST + API Key（可用）；MCP server（可用，`POST /mcp`）：提供 compress_image、upscale_image、check_quota、get_task 工具，单会话小额度免费，可配 `lp_api_key` 使用账号月额度。

@@ -96,11 +96,9 @@ describe("dictionaries", () => {
     expect(en["meta.pricing.description"]).toContain("a successful upscale costs 1 run")
   })
 
-  it("keeps the planned agent channels marked as planned, not available", () => {
-    expect(zhCN["dev.agents.mcpStatus"]).toBe("规划中")
-    expect(zhCN["dev.agents.x402Status"]).toBe("规划中")
-    expect(en["dev.agents.mcpStatus"]).toBe("Planned")
-    expect(en["dev.agents.x402Status"]).toBe("Planned")
+  it("keeps the shipped MCP channel marked available", () => {
+    expect(zhCN["dev.agents.mcpStatus"]).toBe("可用")
+    expect(en["dev.agents.mcpStatus"]).toBe("Available")
   })
 
   it("never promises a saving the measurements do not support", () => {
